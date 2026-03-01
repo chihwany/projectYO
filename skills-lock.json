@@ -1,0 +1,35 @@
+{
+  "version": 1,
+  "skills": {
+    "fastapi-python": {
+      "source": "mindrally/skills",
+      "sourceType": "github",
+      "computedHash": "1d7346210a6690d2faeb089f074c0dc20a7056c2c83ac1062a11c1b73158be72"
+    },
+    "find-skills": {
+      "source": "vercel-labs/skills",
+      "sourceType": "github",
+      "computedHash": "6412eb4eb3b91595ebab937f0c69501240e7ba761b3d82510b5cf506ec5c7adc"
+    },
+    "flutter": {
+      "source": "hairyf/skills",
+      "sourceType": "github",
+      "computedHash": "ba22f6882f8750f8608c97f0a620222a226b75eeebb34c035d3a89b2ba37cb72"
+    },
+    "push-notification-setup": {
+      "source": "aj-geddes/useful-ai-prompts",
+      "sourceType": "github",
+      "computedHash": "98ae2ada568cddfb44416e50813abb139d093ba52f249ddb21cf9bdbe01dd5c8"
+    },
+    "redis-development": {
+      "source": "redis/agent-skills",
+      "sourceType": "github",
+      "computedHash": "d4f7e3cd197a4ed0dbea7dd133c8b4e83f550b5e9376ec672bbd6d988379e2b6"
+    },
+    "web-scraping": {
+      "source": "mindrally/skills",
+      "sourceType": "github",
+      "computedHash": "01ffcaaf7f9ec8c4fdf0b26fdab5d5db5d39c0ee6727f693ce09c10a991a0bf0"
+    }
+  }
+}
