@@ -154,8 +154,8 @@ Future<void> openProduct(String platform, String productId) async {
 | **Backend** | Python + FastAPI | 3.11+ / 0.100+ | Python 언어 통일, 비동기 I/O, 자동 API 문서 |
 | **ORM** | SQLAlchemy + Alembic | 2.x | DB 모델 정의 및 마이그레이션 |
 | **Validation** | Pydantic v2 | 2.x | 요청/응답 데이터 검증 |
-| **Database** | PostgreSQL | 16 | 사용자/키워드/알림 이력 영구 저장 |
-| **Cache/Queue** | Redis | 7.x | seen_ids 중복 방지, Stream 메시지 큐 |
+| **Database** | PostgreSQL | 18 | 사용자/키워드/알림 이력 영구 저장 |
+| **Cache/Queue** | Redis | 8.x | seen_ids 중복 방지, Stream 메시지 큐 |
 | **Push Notification** | Firebase Admin SDK (Python) | 6.x | iOS/Android 크로스 플랫폼 무료 푸시 |
 | **Auth** | python-jose (JWT) + passlib | - | 자체 로그인 토큰 발급, 비밀번호 해싱 |
 | **Mobile** | Flutter | 3.x | 단일 코드베이스 iOS/Android |
@@ -931,18 +931,18 @@ API_BASE_URL=http://localhost:8000
 version: '3.8'
 services:
   postgres:
-    image: postgres:16-alpine
+    image: postgres:18-alpine
     environment:
       POSTGRES_DB: secondhand_alert
-      POSTGRES_USER: user
-      POSTGRES_PASSWORD: password
+      POSTGRES_USER: projectYO
+      POSTGRES_PASSWORD: abcde12#
     ports:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
 
   redis:
-    image: redis:7-alpine
+    image: redis:8-alpine
     ports:
       - "6379:6379"
     command: redis-server --appendonly yes
