@@ -290,6 +290,8 @@ CREATE TABLE users (
   provider_id      VARCHAR(255),               -- 소셜 로그인 제공자의 고유 사용자 ID
   fcm_token        TEXT,                       -- Firebase FCM 디바이스 토큰
   device_platform  VARCHAR(10),               -- 'ios' | 'android'
+  quiet_start      TIME DEFAULT '23:00',       -- 방해금지 시작 (기본 23:00)
+  quiet_end        TIME DEFAULT '07:00',       -- 방해금지 종료 (기본 07:00)
   is_active        BOOLEAN DEFAULT true,
   created_at       TIMESTAMPTZ DEFAULT NOW(),
   updated_at       TIMESTAMPTZ DEFAULT NOW(),
@@ -956,57 +958,289 @@ volumes:
 
 ---
 
-## 16. 개발 순서 (구현 우선순위)
+## 16. 개발 순서 (바이브 코딩 상세 지시서)
 
-### Phase 1: 인프라 + 크롤러
+> **개발 원칙**: 각 단계는 독립적으로 동작 확인 후 다음 단계 진행. Claude Code 바이브 코딩 기준으로 각 단계에서 스킬(skill)과 함께 명확한 지시를 전달합니다.
 
-1. `docker-compose.yml` 작성 → PostgreSQL + Redis 로컬 환경 구성
-2. `crawler/` 전체 작성
-   - `scrapers/bunjang_scraper.py` — 번개장터 스크래퍼 (알림 폴링: 카테고리 병렬 / 앱 검색: 키워드)
-   - `scrapers/daangn_scraper.py` — 당근 스크래퍼 (동 레벨 검색)
-   - `scrapers/joongna_scraper.py` — 중고나라 스크래퍼 (알림 폴링: 카테고리 병렬 / 앱 검색: 키워드)
-   - `data/daangn_regions.py` — 지역 코드 + 구/군별 하위 동 목록
-   - `server.py` — Flask REST API (구/군 병렬 검색 엔드포인트 포함)
-   - `redis_client.py` — Redis Stream 발행
-   - `scheduler.py` — APScheduler 1분 폴링 (번개장터+중고나라만)
+---
 
-### Phase 2: FastAPI 백엔드 기초
+### Phase 1: 기본 검색 기능 (당근 · 번개장터 · 중고나라)
 
-3. FastAPI 프로젝트 초기화
-4. SQLAlchemy 모델 정의 + Alembic 마이그레이션
-5. Auth API: 자체 로그인/회원가입 + JWT
-6. Auth API: 소셜 로그인 (네이버, 카카오, 구글)
-7. Keywords CRUD API (인증 필요)
-8. Notifications 이력 API (인증 필요)
-9. Search 프록시 API (인증 불필요 — 비로그인 허용)
+> **목표**: 세 플랫폼의 매물을 검색하고 Flutter 앱에서 결과를 확인할 수 있는 상태
 
-### Phase 3: 알림 파이프라인
+#### Step 1-1. Docker 환경 확인 및 실행
+- `docker-compose.yml` 확인 → PostgreSQL + Redis 정상 기동 확인
+- 바이브 코딩 지시: `/run-dev` 스킬로 환경 시작
 
-10. Redis Stream Consumer 백그라운드 태스크 구현
-11. 키워드 매칭 로직 구현
-12. FCM Admin SDK 연동 (건수 집약형 발송)
-13. 중복 알림 방지 로직 (2단계)
+#### Step 1-2. 크롤러 Flask 서버 기초 구조 생성
+- `/new-fastapi-router` 대신 크롤러용 Flask 서버 뼈대 작성
+- 생성 파일:
+  - `crawler/requirements.txt` — requests, beautifulsoup4, flask, lxml
+  - `crawler/server.py` — Flask 앱 기초 (헬스체크 `/health` 엔드포인트만)
+  - `crawler/scrapers/__init__.py`
+- 동작 확인: `python crawler/server.py` → `GET /health` 200 응답
 
-### Phase 4: Flutter 앱
+#### Step 1-3. 번개장터 스크래퍼 + 검색 엔드포인트
+- 바이브 코딩 지시: `/new-scraper` 스킬 — 번개장터 키워드 검색
+- 생성 파일: `crawler/scrapers/bunjang_scraper.py`
+  - `search(keyword, page=1, count=20, min_price=None, max_price=None, sort="recent")` 함수
+  - 반환 형식: `{"items": [...], "total": N}`
+  - 각 아이템: `id, title, price, image_url, url, location, status, time, source="bunjang"`
+- `crawler/server.py`에 엔드포인트 추가: `GET /api/bunjang/search`
+- 바이브 코딩 지시: `/add-crawler-endpoint` 스킬
+- 동작 확인: `curl "http://localhost:5000/api/bunjang/search?keyword=아이폰&page=1"`
 
-14. Flutter 프로젝트 초기화 (Riverpod, GoRouter, Dio, freezed, url_launcher)
-15. FCM 플러그인 설정 (firebase_messaging)
-16. `deep_link_service.dart` — 앱 딥링크 + 모바일 웹 폴백
-17. BottomNavigationBar 4탭 구조
-18. 탭1: 당근 검색 (시/도 → 구/군 선택 → 하위 동 전체 검색)
-19. 탭2: 번개장터+중고나라 통합 검색
-20. 탭3: 알림 이력 (비로그인 안내 처리 포함)
-21. 탭4: 설정 + 로그인/회원가입 (자체 + 소셜)
-22. 키워드 관리 화면
-23. Android `AndroidManifest.xml` + iOS `Info.plist` 딥링크 쿼리 등록
+#### Step 1-4. 중고나라 스크래퍼 + 검색 엔드포인트
+- 바이브 코딩 지시: `/new-scraper` 스킬 — 중고나라 키워드 검색 (HTML 우회)
+- 생성 파일: `crawler/scrapers/joongna_scraper.py`
+  - `search(keyword, page=1, count=20, min_price=None, max_price=None, sort="recent")` 함수
+  - User-Agent 고정 Chrome 131, `__NEXT_DATA__` 파싱
+  - 반환 형식: 번개장터와 동일 구조, `source="joongna"`
+- `crawler/server.py`에 엔드포인트 추가: `GET /api/joongna/search`
+- 바이브 코딩 지시: `/add-crawler-endpoint` 스킬
+- 동작 확인: `curl "http://localhost:5000/api/joongna/search?keyword=맥북&page=1"`
 
-### Phase 5: 최적화 + 출시 준비
+#### Step 1-5. 당근 지역 데이터 + 스크래퍼 + 검색 엔드포인트
+- 생성 파일 1: `crawler/data/daangn_regions.py`
+  - 시/도 → 구/군 목록 딕셔너리
+  - 구/군 코드 → 하위 동(depth=3) 목록 딕셔너리
+  - `get_districts(city)` — 구/군 목록 반환
+  - `get_sub_regions(district_code)` — 하위 동 코드 목록 반환
+- 생성 파일 2: `crawler/scrapers/daangn_scraper.py`
+  - `search(keyword, region_code, page=1, count=20)` — 동 레벨 단건 검색
+  - `district_search(keyword, district_code, count=20)` — 구/군 → 하위 동 `ThreadPoolExecutor(max_workers=10)` 병렬 검색 → 중복 제거
+  - `window.__remixContext` JSON 파싱, 실패 시 BeautifulSoup 폴백
+  - 반환 형식: `source="daangn"`, 각 아이템에 `region` 포함
+- `crawler/server.py`에 엔드포인트 추가:
+  - `GET /api/daangn/search` — 동 레벨 단건
+  - `GET /api/daangn/district-search` — 구/군 레벨 병렬
+  - `GET /api/daangn/districts` — 구/군 목록 반환
+- 동작 확인: `curl "http://localhost:5000/api/daangn/district-search?keyword=아이폰&district=강남구-10"`
 
-24. 방해금지 시간대 로직 (FCM 발송 전 시간 체크)
-25. FCM 토큰 만료 처리 (unregistered 오류 시 토큰 삭제)
-26. 에러 모니터링 (Sentry)
-27. 프로덕션 배포 (Docker + Railway/GCP)
-28. iOS/Android 스토어 배포 준비
+#### Step 1-6. FastAPI 백엔드 초기화 + 검색 프록시 라우터
+- 바이브 코딩 지시: `/new-fastapi-router` 스킬 — search 라우터 생성
+- 생성 파일:
+  - `backend/requirements.txt` — fastapi, uvicorn, httpx, pydantic-settings
+  - `backend/app/main.py` — FastAPI 앱 진입점
+  - `backend/app/core/config.py` — 환경변수 (CRAWLER_API_URL, DATABASE_URL 등)
+  - `backend/app/routers/search.py` — 크롤러 API 프록시 (인증 불필요)
+    - `GET /search/bunjang` → `http://crawler:5000/api/bunjang/search` 중계
+    - `GET /search/joongna` → `http://crawler:5000/api/joongna/search` 중계
+    - `GET /search/daangn` → `http://crawler:5000/api/daangn/search` 중계
+    - `GET /search/daangn/district` → `http://crawler:5000/api/daangn/district-search` 중계
+    - `GET /search/daangn/districts` → `http://crawler:5000/api/daangn/districts` 중계
+    - `GET /search/all` → 번개장터 + 중고나라 동시 호출 후 병합 반환
+- 동작 확인: `GET http://localhost:8000/search/bunjang?keyword=아이폰`
+
+#### Step 1-7. Flutter 앱 초기화
+- 바이브 코딩 지시: Flutter 프로젝트 생성
+  - 패키지명: `com.project.yo`
+  - 의존성: `riverpod`, `flutter_riverpod`, `go_router`, `dio`, `freezed`, `url_launcher`
+- 생성 파일:
+  - `mobile/pubspec.yaml`
+  - `mobile/lib/main.dart` — ProviderScope + GoRouter 설정
+  - `mobile/lib/router.dart` — 라우트 정의 (탭 구조)
+  - `mobile/lib/services/api_service.dart` — Dio 기반 HTTP 클라이언트 (BASE_URL: `http://localhost:8000`)
+  - `mobile/lib/services/deep_link_service.dart` — 앱 딥링크 + 모바일 웹 폴백
+  - `mobile/lib/models/product.dart` — Product 모델 (freezed)
+  - `mobile/lib/widgets/product_card.dart` — 상품 카드 위젯 (탭 → deepLinkService 호출)
+  - `mobile/lib/widgets/platform_badge.dart` — 플랫폼 뱃지
+- Android `AndroidManifest.xml`: `bunjang`, `karrot`, `joonggonara` 패키지 쿼리 추가
+- iOS `Info.plist`: `LSApplicationQueriesSchemes`에 `bunjang`, `karrot`, `joonggonara` 추가
+
+#### Step 1-8. Flutter - 탭 기본 구조 (BottomNavigationBar)
+- 바이브 코딩 지시: `/new-flutter-screen` 스킬 — 4탭 구조
+- 생성 파일:
+  - `mobile/lib/tabs/daangn_tab.dart` — 탭1 기본 골격
+  - `mobile/lib/tabs/market_tab.dart` — 탭2 기본 골격
+  - `mobile/lib/tabs/alerts_tab.dart` — 탭3 기본 골격 (로그인 필요 안내)
+  - `mobile/lib/tabs/settings_tab.dart` — 탭4 기본 골격 (비로그인 상태 안내)
+
+#### Step 1-9. Flutter - 탭1: 당근 검색 화면 구현
+- 바이브 코딩 지시: `/new-flutter-screen` 스킬 — 당근 검색
+- 바이브 코딩 지시: `/new-riverpod-provider` 스킬 — 당근 검색 provider
+- 구현 내용:
+  - 시/도 드롭다운 → 구/군 드롭다운 (선택 시 `GET /search/daangn/districts` 호출)
+  - 키워드 입력창 + 검색 버튼
+  - `GET /search/daangn/district?keyword=...&district=...` 호출
+  - 결과: `ProductCard` 리스트 (당근 딥링크 `karrot://articles/{id}`)
+  - 로딩 인디케이터, 에러 처리, 결과 없음 안내
+
+#### Step 1-10. Flutter - 탭2: 번개장터+중고나라 통합 검색 화면 구현
+- 바이브 코딩 지시: `/new-flutter-screen` 스킬 — 통합 검색
+- 바이브 코딩 지시: `/new-riverpod-provider` 스킬 — 통합 검색 provider
+- 구현 내용:
+  - 플랫폼 선택 토글: `[번개장터]` `[중고나라]` `[통합]`
+  - 검색창 + 검색 버튼 + 가격 범위 필터 + 정렬 선택
+  - `통합` 선택 시 `GET /search/all` 호출, 개별 선택 시 각 엔드포인트 호출
+  - 결과: `ProductCard` 리스트 (플랫폼 뱃지 포함)
+  - Pull-to-refresh, 로딩 인디케이터, 에러 처리
+
+> **Phase 1 완료 기준**: 세 플랫폼 검색 결과가 Flutter 앱에서 정상 표시되고 상품 카드 탭 시 해당 앱(또는 모바일 웹)으로 이동
+
+---
+
+### Phase 2: 스케줄러 + Redis 키워드 매칭 파이프라인
+
+> **목표**: 번개장터·중고나라의 신규 매물을 1분마다 자동 수집하고 사용자 키워드와 비교하는 파이프라인 완성
+
+#### Step 2-1. Redis 클라이언트 설정
+- 바이브 코딩 지시: `crawler/redis_client.py` 작성
+  - Redis 연결 싱글톤
+  - `publish_new_item(item: dict)` — `product_alerts` Stream에 XADD
+  - `is_seen(platform, product_id)` — `seen:{platform}:{product_id}` 키 체크 및 SET (NX, TTL=86400)
+
+#### Step 2-2. 번개장터 최신 매물 수집 엔드포인트 (카테고리 병렬)
+- 바이브 코딩 지시: `/add-crawler-endpoint` 스킬
+- `crawler/scrapers/bunjang_scraper.py`에 함수 추가:
+  - `get_recent(within_minutes=1)` — 19개 상위 카테고리 `ThreadPoolExecutor(max_workers=5)` 병렬 수집 → 상품 ID 기준 중복 제거 → `within_minutes` 내 업로드된 상품만 필터
+- `crawler/server.py`에 엔드포인트 추가: `GET /api/bunjang/recent?within_minutes=1`
+- 동작 확인: 최근 1분 내 번개장터 신규 매물 리스트 반환
+
+#### Step 2-3. 중고나라 최신 매물 수집 엔드포인트 (카테고리 병렬)
+- 바이브 코딩 지시: `/add-crawler-endpoint` 스킬
+- `crawler/scrapers/joongna_scraper.py`에 함수 추가:
+  - `get_recent(within_minutes=1)` — 최상위 카테고리 `ThreadPoolExecutor(max_workers=5)` 병렬 수집 → 중복 제거 → 시간 필터
+- `crawler/server.py`에 엔드포인트 추가: `GET /api/joongna/recent?within_minutes=1`
+- 동작 확인: 최근 1분 내 중고나라 신규 매물 리스트 반환
+
+#### Step 2-4. APScheduler 1분 폴링 설정
+- 바이브 코딩 지시: `crawler/scheduler.py` 작성
+- 구현 내용:
+  ```
+  @scheduler.scheduled_job('interval', minutes=1)
+  def poll():
+    1. GET /api/bunjang/recent + GET /api/joongna/recent 호출
+    2. 각 아이템마다 is_seen() 체크 → 신규만 추출
+    3. 신규 아이템 → publish_new_item() 으로 Redis Stream 발행
+    4. 에러 처리: 플랫폼별 실패 시 건너뛰고 계속
+  ```
+- `crawler/server.py`에 APScheduler 통합 (Flask startup 시 시작)
+- 동작 확인: 1분마다 로그에 수집 결과 출력
+
+#### Step 2-5. FastAPI 백엔드 - DB 모델 정의
+- 바이브 코딩 지시: `/new-db-model` 스킬 — User, Keyword 모델
+- 생성 파일:
+  - `backend/app/database.py` — SQLAlchemy 엔진 + 세션
+  - `backend/app/models/user.py` — User 모델
+    - 컬럼: `id(UUID)`, `email`, `password_hash`, `nickname`, `auth_provider(default=local)`, `provider_id`, `fcm_token`, `device_platform`, `quiet_start(default=23:00)`, `quiet_end(default=07:00)`, `is_active`, `created_at`, `updated_at`
+  - `backend/app/models/keyword.py` — Keyword 모델
+    - 컬럼: `id(UUID)`, `user_id(FK)`, `keyword`, `platforms(array, default=[bunjang,joongna])`, `min_price`, `max_price`, `is_active`, `created_at`
+  - `backend/app/models/notification.py` — NotificationHistory 모델 (추후 FCM 연동 시 활성화)
+
+#### Step 2-6. Alembic 마이그레이션 실행
+- 바이브 코딩 지시: `/db-migrate` 스킬
+- `alembic init` → `alembic revision --autogenerate` → `alembic upgrade head`
+- 동작 확인: PostgreSQL에 `users`, `keywords`, `notification_history` 테이블 생성 확인
+
+#### Step 2-7. FastAPI - 자체 회원가입/로그인 (JWT)
+- 바이브 코딩 지시: `/new-fastapi-router` 스킬 — auth 라우터
+- 생성 파일:
+  - `backend/app/core/security.py` — bcrypt 해싱, JWT 생성/검증
+  - `backend/app/schemas/auth.py` — RegisterRequest, LoginRequest, TokenResponse
+  - `backend/app/routers/auth.py`
+    - `POST /auth/register` — 이메일/비밀번호/닉네임 → User 생성 → JWT 반환
+    - `POST /auth/login` — 이메일/비밀번호 검증 → JWT 반환
+    - `POST /auth/refresh` — JWT 갱신
+    - (소셜 로그인 엔드포인트는 Phase 3에서 추가)
+  - `backend/app/core/deps.py` — `get_current_user` 의존성 함수
+- 동작 확인: 회원가입 → 로그인 → JWT 발급
+
+#### Step 2-8. FastAPI - 키워드 CRUD API
+- 바이브 코딩 지시: `/new-fastapi-router` 스킬 — keywords 라우터
+- 생성 파일:
+  - `backend/app/schemas/keyword.py`
+  - `backend/app/routers/keywords.py`
+    - `GET /keywords` — 내 키워드 목록
+    - `POST /keywords` — 키워드 등록 (최대 10개 제한 검증)
+    - `PATCH /keywords/{id}` — 키워드 수정
+    - `DELETE /keywords/{id}` — 키워드 삭제
+    - `PATCH /keywords/{id}/toggle` — 활성/비활성 토글
+- 동작 확인: 키워드 등록/조회/수정/삭제/토글
+
+#### Step 2-9. FastAPI - Redis Stream Consumer + 키워드 매칭 로직
+- 바이브 코딩 지시: `backend/app/services/alert_consumer.py` 작성
+- 생성 파일:
+  - `backend/app/core/redis.py` — Redis 클라이언트 싱글톤
+  - `backend/app/services/alert_consumer.py`
+    - `run_alert_consumer()` — FastAPI lifespan에서 asyncio 태스크로 실행
+    - Redis Stream `product_alerts` XREADGROUP 소비
+    - `process_alert(product)` — 활성 키워드 전체 로드 → 플랫폼/제목/가격 매칭 → 매칭 사용자 추출
+    - 매칭 결과: `notification_history` 저장 (FCM 발송은 Phase 3에서 연결)
+    - 활성 키워드 Redis 캐시 (`active_keywords`, TTL=60초)
+  - `backend/app/main.py` — lifespan에 `run_alert_consumer()` 태스크 등록
+- 동작 확인: 스케줄러가 신규 매물 발행 → consumer가 소비 → `notification_history` DB 저장 확인
+
+> **Phase 2 완료 기준**: 1분마다 번개장터·중고나라 신규 매물이 자동 수집되고, 등록된 키워드와 매칭되어 DB에 알림 이력이 저장됨
+
+---
+
+### Phase 3: FCM 알림 + Flutter 알림/설정 탭 (추후 진행)
+
+> Phase 2 완료 후 진행
+
+#### Step 3-1. Firebase 프로젝트 설정
+- Firebase 프로젝트 생성
+- `google-services.json` → `mobile/android/app/`
+- `GoogleService-Info.plist` → `mobile/ios/Runner/`
+- `serviceAccountKey.json` → `backend/` (`.gitignore` 등록)
+
+#### Step 3-2. FCM 알림 발송 연동
+- `backend/app/services/fcm_service.py` 작성 — 건수 집약형 FCM 발송
+- `alert_consumer.py`에 FCM 발송 연결
+- `PATCH /auth/fcm-token` 엔드포인트 추가
+- 방해금지 시간대 체크 로직 추가 (`quiet_start`, `quiet_end` 기준)
+
+#### Step 3-3. FastAPI - 알림 이력 API + 회원탈퇴
+- `/new-fastapi-router` 스킬 — notifications 라우터
+- `GET /notifications`, `PATCH /notifications/{id}/read`, `POST /notifications/read-all`
+- `DELETE /notifications`, `GET /notifications/unread-count`
+- `DELETE /auth/me` — 회원탈퇴 (Hard delete, CASCADE)
+
+#### Step 3-4. Flutter - FCM 수신 설정
+- `firebase_messaging` 플러그인 설정
+- `mobile/lib/services/fcm_service.dart` — 포그라운드/백그라운드 알림 처리
+- BottomNavigationBar 탭3 뱃지 표시 (읽지 않은 알림 건수)
+
+#### Step 3-5. Flutter - 탭3: 알림 이력 화면
+- `/new-flutter-screen` 스킬
+- `/new-riverpod-provider` 스킬 — 알림 provider
+- 알림 목록 (최신순, 무한 스크롤), 읽음 처리, 날짜별 그룹핑
+
+#### Step 3-6. Flutter - 탭4: 설정 + 자체 로그인/회원가입
+- `/new-flutter-screen` 스킬 — 설정 화면, 로그인 화면, 회원가입 화면
+- `/new-riverpod-provider` 스킬 — auth provider
+- 로그인/로그아웃, 방해금지 시간대 설정, 키워드 관리 화면 연결
+
+#### Step 3-7. Flutter - 키워드 관리 화면
+- `/new-flutter-screen` 스킬
+- 키워드 카드 목록, 스와이프 삭제, 추가/수정 폼
+
+---
+
+### Phase 4: 소셜 로그인 (추후 진행 — 기본 앱 + 알림 완료 후)
+
+> Phase 3 완료 후 진행
+
+#### Step 4-1. 네이버/카카오/구글 개발자센터 앱 등록 및 키 발급
+#### Step 4-2. FastAPI - 소셜 OAuth 엔드포인트 추가
+- `/add-social-oauth` 스킬 — 네이버
+- `/add-social-oauth` 스킬 — 카카오
+- `/add-social-oauth` 스킬 — 구글
+#### Step 4-3. Flutter - 로그인 화면에 소셜 로그인 버튼 추가
+- InAppWebView OAuth 흐름, 앱 딥링크 콜백 처리
+
+---
+
+### Phase 5: 최적화 + 프로덕션 배포 (추후 진행)
+
+> Phase 4 완료 후 진행
+
+- FCM 토큰 만료 처리 (unregistered 오류 시 토큰 삭제)
+- 알림 이력 30일 자동 삭제 스케줄러
+- 에러 모니터링 (Sentry)
+- Docker 이미지 빌드 + Railway / GCP Cloud Run 배포
+- iOS/Android 스토어 배포 준비
 
 ---
 
@@ -1045,32 +1279,35 @@ volumes:
 
 ---
 
-## 18. 미결정 사항 (코딩 전 결정 필요)
+## 18. 결정 사항
 
-| 항목 | 옵션 A | 옵션 B | 현재 결정/권장 |
-|---|---|---|---|
-| **소셜 로그인 Redirect URI** | 앱 딥링크 스킴 (`myapp://callback`) | FastAPI 서버 URL | 앱 딥링크 권장 |
-| **키워드 최대 개수** | 사용자당 10개 | 20개 | **10개** (서버 부하) |
-| **알림 이력 보존 기간** | 30일 자동 삭제 | 무제한 | **30일** (비용 절감) |
-| **스케줄러 실행 방식** | APScheduler (Flask 내장) | 별도 프로세스 | **APScheduler** (단순함) |
-| **방해금지 시간대 기본값** | 23:00~08:00 | 사용자 설정만 | **23:00~08:00 기본** |
-| **회원탈퇴 처리** | Soft delete (is_active=false) | Hard delete | **Soft delete** |
-| **중고나라 앱 딥링크 스킴** | `joonggonara://product/{id}` | 확인 불가 시 웹만 | 실제 스킴 확인 후 결정 |
-| **당근 구/군 병렬 workers** | 10 | 5 | **10** (동 수 많음) |
+| 항목 | **결정값** | 비고 |
+|---|---|---|
+| **소셜 로그인 Redirect URI** | 앱 딥링크 스킴 (`com.project.yo://callback`) | 앱 딥링크로 확정 |
+| **키워드 최대 개수** | **사용자당 10개** | 서버 부하 방지 |
+| **알림 이력 보존 기간** | **30일 자동 삭제** | 비용 절감 |
+| **스케줄러 실행 방식** | **APScheduler (Flask 내장)** | 단순함 우선 |
+| **방해금지 시간대 기본값** | **23:00~07:00** (사용자별 지정 가능) | `users` 테이블에 `quiet_start`, `quiet_end` 컬럼 추가 |
+| **회원탈퇴 처리** | **Hard delete (전체 삭제)** | CASCADE로 관련 데이터 모두 삭제 |
+| **번개장터·중고나라 딥링크** | **모바일 앱으로 이동** (`bunjang://`, `joonggonara://`) | 앱 미설치 시 모바일 웹 폴백 |
+| **당근 구/군 병렬 workers** | **10** | 동 수 많음 (강남구 20~30개) |
 
 ---
 
-## 19. 추가로 필요한 정보 (현재 미확보)
+## 19. 확정 정보 및 추후 진행 항목
 
-코딩 시작 전 또는 진행 중 확인·설정이 필요한 항목입니다.
+### 확정된 항목
 
-1. **앱 이름 / 패키지명** — Flutter 초기화 시 필요 (`com.xxx.앱이름`)
-2. **Firebase 프로젝트** — 생성 및 `google-services.json`, `GoogleService-Info.plist` 발급
-3. **네이버 개발자센터** — 앱 등록, Client ID/Secret, Redirect URI 설정
-4. **카카오 개발자센터** — 앱 등록, REST API 키, Redirect URI 설정
-5. **Google Cloud Console** — OAuth2 클라이언트 생성, Client ID/Secret 발급
-6. **iOS 개발자 계정** — Apple Push Notification (APNs) 인증서 설정
-7. **중고나라 앱 딥링크 스킴** — 실제 `joonggonara://` 스킴 동작 여부 확인 필요
-8. **프로덕션 배포 환경** — Railway / GCP / AWS 결정
-9. **번개장터 Rate Limit** — 분당 최대 요청 수 공식 문서 없음, 실험적 파악 필요
-10. **중고나라 HTML 구조 변경 모니터링** — `__NEXT_DATA__` 경로가 배포마다 변경 가능성 있음
+| 항목 | 결정값 |
+|---|---|
+| **앱 패키지명** | `com.project.yo` |
+| **소셜 로그인 (네이버/카카오/구글)** | 기본 앱 개발 + FCM 알림 기능 완료 후 진행 |
+| **Firebase 프로젝트** | 알림 기능 구현 단계에서 설정 |
+| **프로덕션 배포 환경** | 개발 완료 후 결정 (Railway / GCP / AWS) |
+
+### 개발 중 확인 필요 항목
+
+1. **번개장터 Rate Limit** — 분당 최대 요청 수 공식 문서 없음, 실험적 파악 필요
+2. **중고나라 HTML 구조 변경 모니터링** — `__NEXT_DATA__` 경로가 배포마다 변경 가능성 있음
+3. **중고나라 앱 딥링크 스킴** — `joonggonara://product/{id}` 실제 동작 여부 확인 필요 (미확인 시 모바일 웹으로만 처리)
+4. **iOS 개발자 계정** — APNs 인증서 (알림 기능 구현 시 필요)

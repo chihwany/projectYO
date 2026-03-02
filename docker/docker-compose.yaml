@@ -3,7 +3,7 @@ services:
     image: postgres:18-alpine
     container_name: projectyo_postgres
     environment:
-      POSTGRES_DB: secondhand_alert
+      POSTGRES_DB: project-db
       POSTGRES_USER: projectYO
       POSTGRES_PASSWORD: abcde12#
     ports:
@@ -17,7 +17,7 @@ services:
       retries: 5
 
   redis:
-    image: redis:8-alpine
+    image: redis:8.0-alpine
     container_name: projectyo_redis
     ports:
       - "6379:6379"
