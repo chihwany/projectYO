@@ -39,7 +39,8 @@
       "WebFetch(domain:www.daangn.com)",
       "WebSearch",
       "Bash(crawler/.venv/Scripts/python.exe *)",
-      "Bash(.venv/Scripts/python.exe -c \":*)"
+      "Bash(.venv/Scripts/python.exe -c *)",
+      "Bash(crawler/.venv/Scripts/pip.exe *)"
     ],
     "deny": [
       "Bash(rm -rf *)",
