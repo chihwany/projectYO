@@ -16,7 +16,8 @@
       "Bash(curl -s -w \"\\\\n\\\\nTotal time: %{time_total}s\" \"http://localhost:5000/api/daangn/multi-search?keyword=닌텐도&district=덕양구\")",
       "Bash(curl -s -w \"\\\\n\\\\nTotal time: %{time_total}s\" \"http://localhost:5000/api/daangn/multi-search?keyword=%EB%8B%8C%ED%85%90%EB%8F%84&district=%EB%8D%95%EC%96%91%EA%B5%AC\")",
       "Bash(.venv/Scripts/pip.exe install aiohttp)",
-      "Bash(.venv/Scripts/python.exe -c \"import redis; r=redis.from_url\\(''redis://localhost:6379/0''\\); r.delete\\(''daangn:location:덕양구''\\); print\\(''캐시 삭제 완료''\\)\")"
+      "Bash(.venv/Scripts/python.exe -c \"import redis; r=redis.from_url\\(''redis://localhost:6379/0''\\); r.delete\\(''daangn:location:덕양구''\\); print\\(''캐시 삭제 완료''\\)\")",
+      "WebSearch"
     ]
   }
 }

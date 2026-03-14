@@ -1,0 +1,59 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="375" height="812" viewBox="0 0 375 812">
+  <!-- Background -->
+  <rect width="375" height="812" fill="#F5F5F5" rx="20"/>
+  <rect width="375" height="812" fill="none" stroke="#E0E0E0" stroke-width="2" rx="20"/>
+
+  <!-- Status Bar -->
+  <rect x="0" y="0" width="375" height="44" fill="#F5F5F5" rx="20"/>
+  <text x="187" y="30" font-family="Arial" font-size="14" font-weight="bold" text-anchor="middle" fill="#333">9:41</text>
+
+  <!-- Header -->
+  <rect x="0" y="44" width="375" height="56" fill="#424242"/>
+  <text x="24" y="78" font-family="Arial" font-size="20" fill="#FFFFFF">&lt;</text>
+  <text x="187" y="78" font-family="Arial" font-size="18" font-weight="bold" text-anchor="middle" fill="#FFFFFF">키워드 관리</text>
+
+  <!-- Info Text -->
+  <text x="16" y="128" font-family="Arial" font-size="12" fill="#999">등록된 키워드 3/10개 (좌로 스와이프하여 삭제)</text>
+
+  <!-- Keyword Card 1 -->
+  <rect x="16" y="144" width="343" height="100" rx="12" fill="#FFFFFF"/>
+  <text x="32" y="172" font-family="Arial" font-size="16" font-weight="bold" fill="#333">아이폰 15</text>
+  <!-- Platform Badges -->
+  <rect x="32" y="182" width="52" height="20" rx="4" fill="#E8F5E9"/>
+  <text x="58" y="196" font-family="Arial" font-size="10" font-weight="bold" text-anchor="middle" fill="#4CAF50">번개장터</text>
+  <rect x="90" y="182" width="52" height="20" rx="4" fill="#FFF3E0"/>
+  <text x="116" y="196" font-family="Arial" font-size="10" font-weight="bold" text-anchor="middle" fill="#FF9800">중고나라</text>
+  <!-- Price Range -->
+  <text x="32" y="228" font-family="Arial" font-size="12" fill="#999">500,000원 ~ 1,500,000원</text>
+  <!-- Toggle -->
+  <rect x="300" y="158" width="44" height="24" rx="12" fill="#4CAF50"/>
+  <circle cx="332" cy="170" r="10" fill="#FFFFFF"/>
+
+  <!-- Keyword Card 2 -->
+  <rect x="16" y="260" width="343" height="100" rx="12" fill="#FFFFFF"/>
+  <text x="32" y="288" font-family="Arial" font-size="16" font-weight="bold" fill="#333">맥북 프로</text>
+  <rect x="32" y="298" width="52" height="20" rx="4" fill="#E8F5E9"/>
+  <text x="58" y="312" font-family="Arial" font-size="10" font-weight="bold" text-anchor="middle" fill="#4CAF50">번개장터</text>
+  <text x="32" y="344" font-family="Arial" font-size="12" fill="#999">가격 제한 없음</text>
+  <rect x="300" y="274" width="44" height="24" rx="12" fill="#4CAF50"/>
+  <circle cx="332" cy="286" r="10" fill="#FFFFFF"/>
+
+  <!-- Keyword Card 3 - Disabled -->
+  <rect x="16" y="376" width="343" height="100" rx="12" fill="#FFFFFF" opacity="0.7"/>
+  <text x="32" y="404" font-family="Arial" font-size="16" font-weight="bold" fill="#999">에어팟</text>
+  <rect x="32" y="414" width="52" height="20" rx="4" fill="#F5F5F5"/>
+  <text x="58" y="428" font-family="Arial" font-size="10" text-anchor="middle" fill="#999">번개장터</text>
+  <rect x="90" y="414" width="52" height="20" rx="4" fill="#F5F5F5"/>
+  <text x="116" y="428" font-family="Arial" font-size="10" text-anchor="middle" fill="#999">중고나라</text>
+  <text x="32" y="460" font-family="Arial" font-size="12" fill="#999">100,000원 ~ 300,000원</text>
+  <!-- Toggle Off -->
+  <rect x="300" y="390" width="44" height="24" rx="12" fill="#E0E0E0"/>
+  <circle cx="312" cy="402" r="10" fill="#FFFFFF"/>
+  <text x="300" y="460" font-family="Arial" font-size="11" fill="#999">비활성</text>
+
+  <!-- Empty space for more cards -->
+
+  <!-- FAB Button -->
+  <circle cx="335" cy="690" r="28" fill="#4A90D9"/>
+  <text x="335" y="698" font-family="Arial" font-size="28" font-weight="bold" text-anchor="middle" fill="#FFFFFF">+</text>
+</svg>

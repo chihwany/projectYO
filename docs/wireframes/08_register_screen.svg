@@ -1,0 +1,44 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="375" height="812" viewBox="0 0 375 812">
+  <!-- Background -->
+  <rect width="375" height="812" fill="#FFFFFF" rx="20"/>
+  <rect width="375" height="812" fill="none" stroke="#E0E0E0" stroke-width="2" rx="20"/>
+
+  <!-- Status Bar -->
+  <rect x="0" y="0" width="375" height="44" fill="#F5F5F5" rx="20"/>
+  <text x="187" y="30" font-family="Arial" font-size="14" font-weight="bold" text-anchor="middle" fill="#333">9:41</text>
+
+  <!-- Back Button -->
+  <text x="24" y="78" font-family="Arial" font-size="20" fill="#333">&lt;</text>
+
+  <!-- Title -->
+  <text x="187" y="150" font-family="Arial" font-size="24" font-weight="bold" text-anchor="middle" fill="#333">회원가입</text>
+  <text x="187" y="175" font-family="Arial" font-size="13" text-anchor="middle" fill="#999">키워드 알림을 받으려면 가입이 필요합니다</text>
+
+  <!-- Nickname -->
+  <text x="32" y="224" font-family="Arial" font-size="13" font-weight="bold" fill="#333">닉네임</text>
+  <rect x="16" y="234" width="343" height="48" rx="8" fill="#F5F5F5" stroke="#E0E0E0"/>
+  <text x="32" y="263" font-family="Arial" font-size="14" fill="#999">닉네임을 입력하세요</text>
+
+  <!-- Email -->
+  <text x="32" y="312" font-family="Arial" font-size="13" font-weight="bold" fill="#333">이메일</text>
+  <rect x="16" y="322" width="343" height="48" rx="8" fill="#F5F5F5" stroke="#E0E0E0"/>
+  <text x="32" y="351" font-family="Arial" font-size="14" fill="#999">이메일을 입력하세요</text>
+
+  <!-- Password -->
+  <text x="32" y="400" font-family="Arial" font-size="13" font-weight="bold" fill="#333">비밀번호</text>
+  <rect x="16" y="410" width="343" height="48" rx="8" fill="#F5F5F5" stroke="#E0E0E0"/>
+  <text x="32" y="439" font-family="Arial" font-size="14" fill="#999">비밀번호를 입력하세요 (8자 이상)</text>
+
+  <!-- Password Confirm -->
+  <text x="32" y="488" font-family="Arial" font-size="13" font-weight="bold" fill="#333">비밀번호 확인</text>
+  <rect x="16" y="498" width="343" height="48" rx="8" fill="#F5F5F5" stroke="#E0E0E0"/>
+  <text x="32" y="527" font-family="Arial" font-size="14" fill="#999">비밀번호를 다시 입력하세요</text>
+
+  <!-- Register Button -->
+  <rect x="16" y="580" width="343" height="52" rx="8" fill="#333"/>
+  <text x="187" y="612" font-family="Arial" font-size="16" font-weight="bold" text-anchor="middle" fill="#FFFFFF">가입하기</text>
+
+  <!-- Login Link -->
+  <text x="125" y="660" font-family="Arial" font-size="13" fill="#999">이미 계정이 있으신가요?</text>
+  <text x="280" y="660" font-family="Arial" font-size="13" font-weight="bold" fill="#4A90D9">로그인</text>
+</svg>

@@ -18,6 +18,9 @@ crawler/data/
 .env.local
 .env.*.local
 
+# MCP config (contains API tokens)
+.mcp.json
+
 # IDE
 .idea/
 .vscode/

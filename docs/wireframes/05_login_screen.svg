@@ -1,0 +1,56 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="375" height="812" viewBox="0 0 375 812">
+  <!-- Background -->
+  <rect width="375" height="812" fill="#FFFFFF" rx="20"/>
+  <rect width="375" height="812" fill="none" stroke="#E0E0E0" stroke-width="2" rx="20"/>
+
+  <!-- Status Bar -->
+  <rect x="0" y="0" width="375" height="44" fill="#F5F5F5" rx="20"/>
+  <text x="187" y="30" font-family="Arial" font-size="14" font-weight="bold" text-anchor="middle" fill="#333">9:41</text>
+
+  <!-- Back Button -->
+  <text x="24" y="78" font-family="Arial" font-size="20" fill="#333">&lt;</text>
+
+  <!-- Logo / App Title -->
+  <text x="187" y="160" font-family="Arial" font-size="32" font-weight="bold" text-anchor="middle" fill="#333">YO!</text>
+  <text x="187" y="185" font-family="Arial" font-size="14" text-anchor="middle" fill="#999">통합 중고거래 키워드 알림</text>
+
+  <!-- Social Login Section -->
+  <text x="187" y="240" font-family="Arial" font-size="13" text-anchor="middle" fill="#666">소셜 계정으로 로그인</text>
+
+  <!-- Naver Login -->
+  <rect x="32" y="260" width="311" height="48" rx="8" fill="#03C75A"/>
+  <text x="70" y="289" font-family="Arial" font-size="18" font-weight="bold" fill="#FFFFFF">N</text>
+  <text x="187" y="289" font-family="Arial" font-size="15" font-weight="bold" text-anchor="middle" fill="#FFFFFF">네이버로 로그인</text>
+
+  <!-- Kakao Login -->
+  <rect x="32" y="320" width="311" height="48" rx="8" fill="#FEE500"/>
+  <text x="70" y="349" font-family="Arial" font-size="18" font-weight="bold" fill="#3C1E1E">K</text>
+  <text x="187" y="349" font-family="Arial" font-size="15" font-weight="bold" text-anchor="middle" fill="#3C1E1E">카카오로 로그인</text>
+
+  <!-- Google Login -->
+  <rect x="32" y="380" width="311" height="48" rx="8" fill="#FFFFFF" stroke="#E0E0E0"/>
+  <text x="70" y="409" font-family="Arial" font-size="18" font-weight="bold" fill="#4285F4">G</text>
+  <text x="187" y="409" font-family="Arial" font-size="15" font-weight="bold" text-anchor="middle" fill="#333">Google로 로그인</text>
+
+  <!-- Divider -->
+  <line x1="32" y1="460" x2="160" y2="460" stroke="#E0E0E0"/>
+  <text x="187" y="465" font-family="Arial" font-size="13" text-anchor="middle" fill="#999">또는</text>
+  <line x1="214" y1="460" x2="343" y2="460" stroke="#E0E0E0"/>
+
+  <!-- Email Login Section -->
+  <text x="32" y="510" font-family="Arial" font-size="12" font-weight="bold" fill="#666">이메일</text>
+  <rect x="32" y="518" width="311" height="44" rx="8" fill="#F5F5F5" stroke="#E0E0E0"/>
+  <text x="48" y="545" font-family="Arial" font-size="14" fill="#999">이메일을 입력하세요</text>
+
+  <text x="32" y="590" font-family="Arial" font-size="12" font-weight="bold" fill="#666">비밀번호</text>
+  <rect x="32" y="598" width="311" height="44" rx="8" fill="#F5F5F5" stroke="#E0E0E0"/>
+  <text x="48" y="625" font-family="Arial" font-size="14" fill="#999">비밀번호를 입력하세요</text>
+
+  <!-- Login Button -->
+  <rect x="32" y="664" width="311" height="48" rx="8" fill="#333"/>
+  <text x="187" y="693" font-family="Arial" font-size="16" font-weight="bold" text-anchor="middle" fill="#FFFFFF">로그인</text>
+
+  <!-- Register Link -->
+  <text x="140" y="738" font-family="Arial" font-size="13" fill="#999">계정이 없으신가요?</text>
+  <text x="265" y="738" font-family="Arial" font-size="13" font-weight="bold" fill="#4A90D9">회원가입</text>
+</svg>
