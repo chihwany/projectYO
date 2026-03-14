@@ -1,5 +1,6 @@
 # HTTP 요청 / HTML 파싱
 requests==2.32.5
+aiohttp>=3.9.0
 beautifulsoup4==4.14.3
 lxml>=6.0.2  # Python 3.14 지원: pip install lxml --pre 로 설치
 

@@ -35,36 +35,45 @@ print(r.json().keys())  # 응답 구조 확인
 ### 당근 (daangn)
 
 ```python
-# 즉시 테스트
-import requests, re, json
+# 즉시 테스트 (asyncio + aiohttp)
+import asyncio, aiohttp, re, json
 
-url = "https://www.daangn.com/kr/buy-sell/?in=역삼동-360&search=테스트"
-headers = {"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"}
+async def test():
+    url = "https://www.daangn.com/kr/buy-sell/s/"
+    headers = {"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"}
+    params = {"search": "테스트", "in": 1540, "only_on_sale": "true"}
 
-r = requests.get(url, headers=headers, timeout=15)
-print(r.status_code)
+    timeout = aiohttp.ClientTimeout(total=3)
+    async with aiohttp.ClientSession(headers=headers, timeout=timeout) as session:
+        async with session.get(url, params=params) as r:
+            print(r.status)
+            text = await r.text(encoding="utf-8")
 
-# window.__remixContext 블록 파싱 시도
-match = re.search(r'window\.__remixContext\s*=\s*(\{.*?\});\s*</script>', r.text, re.DOTALL)
-if match:
-    data = json.loads(match.group(1))
-    # 탐색 경로
-    articles = data.get("state", {}).get("loaderData", {}) \
-                   .get("routes/kr.buy-sell.s.allPage", {}) \
-                   .get("fleamarketArticles", [])
-    print(f"상품 수: {len(articles)}")
-    if articles:
-        print("첫 번째 상품:", articles[0].keys())
-else:
-    print("__remixContext 블록 없음 → BeautifulSoup fallback 필요")
+    # window.__remixContext 블록 파싱 시도
+    match = re.search(r'window\.__remixContext\s*=\s*(\{.*?\})\s*;', text, re.DOTALL)
+    if match:
+        data = json.loads(match.group(1))
+        articles = data.get("state", {}).get("loaderData", {}) \
+                       .get("routes/kr.buy-sell.s", {}) \
+                       .get("allPage", {}) \
+                       .get("fleamarketArticles", [])
+        print(f"상품 수: {len(articles)}")
+        if articles:
+            print("첫 번째 상품:", articles[0].keys())
+    else:
+        print("__remixContext 블록 없음 → BeautifulSoup fallback 필요")
+
+asyncio.run(test())
 ```
 
 **자주 발생하는 문제:**
 - `__remixContext` 없음: Daangn이 렌더링 방식을 변경했을 수 있음 → BeautifulSoup fallback 확인
 - 정규식 매칭 실패: HTML 구조가 변경됐을 때 → `re.DOTALL` 플래그 확인, 블록 경계 재확인
-- 탐색 경로 변경: `routes/kr.buy-sell.s.allPage` 키가 달라질 수 있음 → `loaderData` 전체 키 출력으로 확인
-- 지역코드 형식: `역삼동-360` (이름-코드) 형식 확인, `daangn_regions.py`에서 올바른 코드 조회
+- 탐색 경로 변경: `routes/kr.buy-sell.s` 키가 달라질 수 있음 → `loaderData` 전체 키 출력으로 확인
+- 지역 검색: `in` 파라미터에 당근 Location API의 정수 id (`name3Id`) 사용
+- Location API 캐싱: Redis `daangn:location:{keyword}` 키로 24시간 캐시
 - 상태 코드: `Ongoing→판매중`, `Reserved→예약중`, `Completed→거래완료` (대소문자 주의)
+- 타임아웃: 기본 3초 — `aiohttp.ClientTimeout(total=3)`
 
 ---
 
@@ -142,8 +151,8 @@ print(dt.isoformat())
 ```bash
 # 크롤러 서버가 실행 중인 상태에서
 curl "http://localhost:5000/api/bunjang/search?keyword=아이폰&count=5"
-curl "http://localhost:5000/api/daangn/search?keyword=아이폰&region=역삼동-360"
-curl "http://localhost:5000/api/daangn/district-search?keyword=아이폰&district=강남구-10"
+curl "http://localhost:5000/api/daangn/search?keyword=아이폰&location_id=1540"
+curl "http://localhost:5000/api/daangn/multi-search?keyword=아이폰&district=강남구"
 curl "http://localhost:5000/api/joongna/search?keyword=아이폰&count=5"
 ```
 

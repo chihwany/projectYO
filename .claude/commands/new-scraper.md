@@ -8,8 +8,8 @@
 |---|---|
 | User-Agent | `Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36` |
 | 요청 딜레이 | `time.sleep(self.delay)` — 기본 0.5초 이상 |
-| 요청 타임아웃 | `requests.get(..., timeout=15)` |
-| 병렬 처리 | 알림 폴링 시에만 `ThreadPoolExecutor(max_workers=5)` |
+| 요청 타임아웃 | `aiohttp.ClientTimeout(total=3)` 또는 `requests.get(..., timeout=3)` |
+| 병렬 처리 | 대량 병렬: `asyncio.gather()` + `aiohttp`, 소규모: `ThreadPoolExecutor` |
 | 앱 검색 | 카테고리 병렬 처리 없음 — 단순 키워드 검색 |
 
 ## 표준 출력 스키마 (10개 필드 필수)
@@ -72,10 +72,13 @@ class {Name}Scraper:
 - 상품 URL: `https://m.bunjang.co.kr/products/{id}`
 - 앱 딥링크: `bunjang://products/{id}`
 
-### 당근 (Remix SSR)
+### 당근 (Remix SSR + asyncio)
 - `window.__remixContext` JSON 블록 정규식 파싱
-- 탐색 경로: `state.loaderData["routes/kr.buy-sell.s.allPage"].fleamarketArticles`
+- 탐색 경로: `state.loaderData["routes/kr.buy-sell.s"].allPage.fleamarketArticles`
 - Fallback: BeautifulSoup HTML 파싱
+- **HTTP 클라이언트:** `aiohttp` (asyncio 네이티브, 커넥션 풀 100개)
+- **병렬 검색:** `asyncio.gather()` — 구/군 하위 동 전체 동시 검색
+- **캐싱:** Redis — Location API 응답 24시간 캐시 (`daangn:location:{keyword}`)
 - 상태 코드: `Ongoing→판매중`, `Reserved→예약중`, `Completed→거래완료`
 - 상품 URL: `https://www.daangn.com/kr/buy-sell/{id}`
 - 앱 딥링크: `karrot://articles/{id}`

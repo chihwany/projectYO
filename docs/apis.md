@@ -25,7 +25,8 @@
 
 ### `GET /api/search`
 
-세 플랫폼(중고나라, 번개장터, 당근마켓)에서 동시에(병렬) 검색하여 결과를 통합해서 반환합니다. 결과는 등록 시간 기준 최신순으로 정렬됩니다.
+번개장터 + 중고나라 두 플랫폼에서 동시에(병렬) 검색하여 결과를 통합해서 반환합니다.
+당근마켓은 지역 기반 검색 특성상 통합 검색에서 제외되며, 별도 탭에서 검색합니다.
 
 **Query Parameters**
 
@@ -39,13 +40,12 @@
 | `min_price` | int | - | | 최소 가격 (원) |
 | `max_price` | int | - | | 최대 가격 (원) |
 | `exclude_sold` | bool | true | | 판매완료 항목 제외 여부 |
-| `region` | string | - | | 지역 필터 (당근마켓 전용) |
 
 **응답 예시**
 
 ```json
 {
-  "success": true,
+  "ok": true,
   "data": [
     {
       "id": "12345",
@@ -64,11 +64,9 @@
     }
   ],
   "keyword": "아이폰",
-  "region": null,
-  "total_count": 60,
+  "total_count": 40,
   "joongna_count": 20,
   "bunjang_count": 20,
-  "daangn_count": 20,
   "elapsed_seconds": 2.3
 }
 ```
@@ -123,7 +121,7 @@
 
 ```json
 {
-  "success": true,
+  "ok": true,
   "data": [
     {"code": 6, "name": "모바일/태블릿"},
     {"code": 7, "name": "가전제품"},
@@ -188,27 +186,6 @@
 | `workers` | int | 5 | 병렬 처리 스레드 수 (최대 10) |
 | `refresh` | bool | false | 카테고리 캐시 갱신 여부 |
 
-**응답 예시**
-
-```json
-{
-  "success": true,
-  "top_categories": [
-    {
-      "id": "310",
-      "title": "여성의류",
-      "count": 2484247,
-      "icon_url": "https://...",
-      "listings": [...],
-      "listings_count": 42
-    }
-  ],
-  "total_listings": 820,
-  "elapsed_seconds": 4.1,
-  "source": "bunjang"
-}
-```
-
 ### `GET /api/bunjang/categories`
 
 **Query Parameters**
@@ -222,90 +199,108 @@
 
 ## 당근마켓 API
 
+> **지역 선택 방식 핵심 원칙**
+>
+> 당근 지역 데이터는 크롤러 서버가 관리하지 않습니다.
+> **Flutter 앱이 당근 Location API를 직접 호출**하여 사용자가 지역을 선택하고,
+> 선택된 `location_id`(정수)를 크롤러 엔드포인트에 파라미터로 전달합니다.
+
 | 엔드포인트 | 메서드 | 설명 |
 |---|---|---|
-| `/api/daangn/search` | GET | 키워드 검색 |
-| `/api/daangn/categories` | GET | 카테고리 목록 |
-| `/api/daangn/regions/search` | GET | 지역 검색 |
-| `/api/daangn/regions/cities` | GET | 시/도 목록 |
-| `/api/daangn/regions/districts` | GET | 시/도 내 구/군 목록 |
-| `/api/daangn/regions/locations` | GET | 당근 지역 API 프록시 |
+| `/api/daangn/search` | GET | 단건 location_id 검색 |
+| `/api/daangn/multi-search` | GET | 다중 location_id 병렬 검색 (구/군 레벨) |
 
 ### `GET /api/daangn/search`
+
+단일 location_id(동/읍/면 레벨)로 검색합니다.
 
 **Query Parameters**
 
 | 파라미터 | 타입 | 기본값 | 필수 | 설명 |
 |---|---|---|---|---|
 | `keyword` | string | - | ✅ | 검색어 |
-| `region` | string | - | | 지역 이름 또는 코드 (예: `강남구`, `역삼동-360`) |
+| `location_id` | int | - | | 당근 Location API의 `name3Id` 값. 생략 시 전국 검색 |
 | `page` | int | 1 | | 페이지 번호 |
-| `category` | int | - | | 카테고리 코드 |
-| `min_price` | int | - | | 최소 가격 (원) |
-| `max_price` | int | - | | 최대 가격 (원) |
-| `exclude_sold` | bool | true | | 판매중인 항목만 반환 여부 |
+| `count` | int | 20 | | 결과 수 |
 
-### `GET /api/daangn/regions/search`
+**요청 예시:**
 
-**Query Parameters**
+```
+GET /api/daangn/search?keyword=아이폰&location_id=1540&count=20
+```
 
-| 파라미터 | 타입 | 기본값 | 설명 |
-|---|---|---|---|
-| `q` | string | - | 검색어 (지역명) |
-| `limit` | int | 20 | 최대 반환 결과 수 |
-
-**응답 예시**
+**응답 예시:**
 
 ```json
 {
-  "success": true,
+  "ok": true,
   "data": [
     {
-      "name": "역삼동",
-      "code": "역삼동-360",
-      "city": "서울특별시",
-      "district": "강남구",
-      "full": "서울특별시 강남구 역삼동"
+      "id": "abc123def",
+      "title": "아이폰 15 Pro",
+      "price": 1200000,
+      "price_str": "1,200,000원",
+      "image_url": "https://...",
+      "status": "판매중",
+      "location": "능곡동",
+      "time": "2024-01-15T10:30:00",
+      "url": "https://www.daangn.com/kr/buy-sell/abc123def",
+      "source": "daangn"
     }
   ],
-  "query": "역삼",
-  "count": 1
+  "count": 1,
+  "source": "daangn"
 }
 ```
 
-### `GET /api/daangn/regions/cities`
+### `GET /api/daangn/multi-search`
 
-시/도 목록을 반환합니다.
-
-**응답 예시**
-
-```json
-{
-  "success": true,
-  "data": ["서울특별시", "부산광역시", "경기도"],
-  "count": 17
-}
-```
-
-### `GET /api/daangn/regions/districts`
+구/군명(`district`)을 받아 하위 동 목록을 자동 조회한 뒤, **asyncio + aiohttp**로 비동기 병렬 검색하여 통합 반환합니다.
+Location API 응답은 Redis에 24시간 캐싱됩니다.
 
 **Query Parameters**
 
 | 파라미터 | 타입 | 필수 | 설명 |
 |---|---|---|---|
-| `city` | string | ✅ | 시/도 이름 (예: `서울특별시`) |
+| `keyword` | string | ✅ | 검색어 |
+| `district` | string | ✅ | 구/군명 (예: `덕양구`, `종로구`) |
+| `count` | int | | 최대 결과 수 (기본 20) |
 
-### `GET /api/daangn/regions/locations`
+**요청 예시:**
 
-**Query Parameters**
+```
+GET /api/daangn/multi-search?keyword=닌텐도&district=덕양구&count=20
+```
 
-| 파라미터 | 타입 | 설명 |
-|---|---|---|
-| `keyword` | string | 지역 검색어 (시/도, 구/군, 동/읍/면 모두 지원) |
+**응답 예시:**
+
+```json
+{
+  "ok": true,
+  "data": [...],
+  "count": 20,
+  "source": "daangn",
+  "district": "덕양구",
+  "dong_count": 46
+}
+```
+
+> **성능:** 46개 동 병렬 검색 기준 ~0.7초 (asyncio + aiohttp, Redis 캐시 적중 시)
 
 ---
 
 ## 공통 응답 형식
+
+### 성공 응답
+
+```json
+{
+  "ok": true,
+  "data": [...],
+  "count": 20,
+  "source": "daangn"
+}
+```
 
 ### 상품 아이템 객체
 
@@ -318,18 +313,15 @@
 | `image_url` | string | 대표 이미지 URL |
 | `status` | string | `판매중` \| `예약중` \| `판매완료` |
 | `location` | string | 거래 지역 |
-| `time` | string | 등록 시각 (ISO 8601 또는 플랫폼 형식) |
+| `time` | string | 등록 시각 (ISO 8601) |
 | `url` | string | 상품 상세 페이지 URL |
-| `seller` | string | 판매자 닉네임 |
-| `likes` | int | 찜/관심 수 |
-| `views` | int | 조회 수 |
 | `source` | string | `joongna` \| `bunjang` \| `daangn` |
 
 ### 오류 응답
 
 ```json
 {
-  "success": false,
+  "ok": false,
   "error": "오류 메시지"
 }
 ```
@@ -339,18 +331,15 @@
 ## 사용 예시
 
 ```bash
-# 통합 검색
-curl "http://localhost:5000/api/search?keyword=아이폰&count=30&sort=recent"
+# 번개장터 검색
+curl "http://localhost:5000/api/bunjang/search?keyword=아이폰&sort=recent"
 
-# 중고나라 - 최근 등록 (전자기기 카테고리)
+# 중고나라 최근 등록 (전자기기 카테고리)
 curl "http://localhost:5000/api/joongna/recent?categories=6,8&count=30&within_minutes=30"
 
-# 번개장터 - 카테고리별 최신 목록
-curl "http://localhost:5000/api/bunjang/recent-by-category?top_categories=310,600&count=20"
+# 당근 - 단건 동 레벨 검색 (Flutter에서 선택된 location_id 전달)
+curl "http://localhost:5000/api/daangn/search?keyword=맥북&location_id=1540"
 
-# 당근마켓 - 지역 + 키워드 검색
-curl "http://localhost:5000/api/daangn/search?keyword=맥북&region=강남구&exclude_sold=true"
-
-# 당근마켓 - 지역 코드 조회
-curl "http://localhost:5000/api/daangn/regions/search?q=판교&limit=5"
+# 당근 - 구/군 전체 검색 (district 파라미터로 자동 하위 동 조회 + 병렬 검색)
+curl "http://localhost:5000/api/daangn/multi-search?keyword=맥북&district=강남구"
 ```

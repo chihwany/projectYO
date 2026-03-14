@@ -23,11 +23,17 @@
 ### B. 당근 (Daangn)
 
 - **수집 방식**: Remix SSR의 `window.__remixContext` JSON 블록 HTML 파싱 (JS 실행 불필요)
+- **HTTP 클라이언트**: `asyncio` + `aiohttp` (비동기 I/O, 커넥션 풀 100개)
+- **병렬 검색**: `asyncio.gather()` — 구/군 하위 동 전체를 코루틴으로 동시 검색 (스레드 없음)
+- **요청 타임아웃**: 3초 (`aiohttp.ClientTimeout(total=3)`)
 - **알림 폴링**: ⚠️ **당근은 폴링 없음** — 스케줄러에서 완전 제외
-- **앱 검색 방식**: 사용자가 구/군(강남구) 레벨 지역 선택 → 해당 구/군 하위의 모든 동(역삼동, 논현동 등) 자동 조회 → 각 동마다 병렬 검색 → 중복 제거 후 통합 리스트 반환
-- **하위 동 확장 로직**: `daangn_regions.py`에서 선택된 구/군 코드의 depth=3 지역(동/읍/면) 전체 목록 조회 → `ThreadPoolExecutor`로 병렬 검색
-- **지역 코드 형식**: `역삼동-360`, `강남구-10` (구/군 선택 시 내부적으로 하위 동 코드 목록으로 확장)
+- **지역 선택 방식**: **Flutter 앱이 크롤러 `/api/daangn/location` 프록시를 경유**하여 당근 Location API(`/v1/api/search/kr/location`) 호출 → 사용자가 지역 선택 → 선택된 `location_id`(정수)를 크롤러에 전달
+  - 동 레벨(depth=3) 선택 시: `name3Id` 1개를 크롤러 `/api/daangn/search`에 전달
+  - 구/군 레벨(depth=2) 선택 시: 크롤러 `/api/daangn/multi-search`에 `district`(구/군명)를 전달 → 크롤러 내부에서 Location API 재호출 → depth=3의 `name3Id` 목록 수집 → 비동기 병렬 검색
+- **Location API 캐싱**: Redis에 24시간 캐시 (`daangn:location:{keyword}`, TTL 86400초). Redis 장애 시 캐시 없이 정상 동작
+- **크롤러에 지역 데이터 없음**: `daangn_regions.py`는 빈 파일로 유지. 지역 조회는 모두 당근 Location API를 실시간 호출로 처리
 - **Fallback**: `__remixContext` 파싱 실패 시 BeautifulSoup HTML 파싱으로 전환
+- **성능**: 46개 동 병렬 검색 기준 ~0.7초 (최초 15초에서 95% 단축)
 - **제한 사항**: 판매자 닉네임·조회수·찜수 정보가 목록 페이지에서 제공되지 않음
 - **상품 URL 조합**: `https://www.daangn.com/kr/buy-sell/{id}` (모바일 웹)
 - **앱 딥링크**: `karrot://articles/{id}` → 앱 미설치 시 모바일 웹으로 폴백
@@ -135,11 +141,13 @@ Future<void> openProduct(String platform, String productId) async {
   └─ 알림 이력 PostgreSQL 저장
 
 [당근 탭 - 앱에서 직접 검색]
-  └─ 사용자: 구/군 레벨 지역 선택 (예: 강남구) + 키워드 입력
-  └─ FastAPI → Crawler Flask API (district-search 엔드포인트)
-  └─ daangn_regions.py에서 강남구 하위 동 전체 목록 조회 (depth=3)
-  └─ 각 동마다 ThreadPoolExecutor로 병렬 검색
-  └─ 중복 상품 ID 제거 후 통합 결과 반환
+  └─ 사용자: 지역 검색어 입력 (예: '덕양구') + 키워드 입력
+  └─ Flutter → GET /api/daangn/location?keyword=덕양구 (크롤러 Location API 프록시)
+  └─ 사용자가 depth=3(동) 선택 시: GET /api/daangn/search?keyword=...&location_id=1540
+  └─ 사용자가 depth=2(구/군) 선택 시: GET /api/daangn/multi-search?keyword=...&district=덕양구
+       └─ 크롤러 내부: search_location(district) → depth=3 name3Id 목록 추출
+       └─ 각 동마다 ThreadPoolExecutor(max_workers=10)로 병렬 검색
+       └─ 중복 상품 ID 제거 후 통합 결과 반환
   └─ (스케줄러와 무관, 폴링 없음)
 ```
 
@@ -187,13 +195,14 @@ projectYO/
 │   ├── scrapers/
 │   │   ├── __init__.py
 │   │   ├── bunjang_scraper.py      # 번개장터 REST API 스크래퍼
-│   │   ├── daangn_scraper.py       # 당근 SSR HTML 스크래퍼
+│   │   ├── daangn_scraper.py       # 당근 SSR HTML 스크래퍼 + Location API 호출
 │   │   └── joongna_scraper.py      # 중고나라 SSR HTML 스크래퍼
 │   ├── data/
-│   │   └── daangn_regions.py       # 당근 지역명 → 지역코드 + 하위 동 목록
+│   │   └── daangn_regions.py       # 빈 파일 (지역 데이터 제거 — Location API 실시간 호출로 대체)
 │   ├── server.py                   # Flask REST API (검색/수집 엔드포인트)
-│   │                               #   포함: GET /api/daangn/district-search
-│   │                               #   (구/군 → 하위 동 전체 병렬 검색)
+│   │                               #   포함: GET /api/daangn/location (Location API 프록시)
+│   │                               #         GET /api/daangn/multi-search
+│   │                               #   (district명 → Location API → 하위 동 전체 병렬 검색)
 │   ├── scheduler.py                # APScheduler: 번개장터·중고나라 1분 폴링
 │   ├── redis_client.py             # Redis 연결 및 Stream XADD 발행
 │   └── requirements.txt            # requests, bs4, flask, apscheduler, redis
@@ -501,22 +510,53 @@ Response: { "access_token": "eyJ...", "token_type": "bearer", "user": { "id": ".
 |---|---|---|
 | GET | `/search/bunjang` | 번개장터 검색 (크롤러 API 중계) |
 | GET | `/search/joongna` | 중고나라 검색 (크롤러 API 중계) |
-| GET | `/search/daangn` | 당근 동 레벨 직접 검색 |
-| GET | `/search/daangn/district` | 당근 구/군 레벨 검색 (하위 동 전체 병렬) |
+| GET | `/search/daangn` | 당근 동 레벨 단건 검색 (`keyword`, `location_id`) |
+| GET | `/search/daangn/location` | 당근 지역 자동완성 검색 (`keyword`) — Location API 프록시 |
+| GET | `/search/daangn/district` | 당근 구/군 레벨 병렬 검색 (`keyword`, `district`) |
 | GET | `/search/all` | 번개장터 + 중고나라 통합 검색 |
-| GET | `/search/daangn/regions` | 당근 지역 자동완성 검색 |
-| GET | `/search/daangn/districts` | 구/군 목록 조회 (탭1 지역 선택용) |
 
 **당근 구/군 레벨 검색 파라미터:**
 ```
-GET /search/daangn/district?keyword=아이폰&district=강남구-10
+GET /search/daangn/district?keyword=아이폰&district=덕양구
 
 동작:
-  1. daangn_regions.py에서 강남구(강남구-10) 하위 모든 동 목록 조회
-     예: [역삼동-360, 논현동-123, 개포동-456, 대치동-789, ...]
-  2. ThreadPoolExecutor로 각 동에서 병렬 검색 실행
-  3. 결과 합산 + 상품 ID 기준 중복 제거
-  4. 최신순 정렬 후 반환
+  1. 크롤러 /api/daangn/multi-search로 중계
+  2. 크롤러 내부: search_location("덕양구") → Location API 실시간 호출
+     → depth=3 항목에서 name3Id 추출 (예: 18개 동)
+  3. ThreadPoolExecutor(max_workers=10)로 각 동 병렬 검색
+  4. 상품 ID 기준 중복 제거 + 최신순 정렬 후 반환
+
+응답:
+  {
+    "ok": true,
+    "data": [...],
+    "count": 15,
+    "source": "daangn",
+    "district": "덕양구",
+    "dong_count": 18
+  }
+```
+
+**당근 지역 검색 파라미터:**
+```
+GET /search/daangn/location?keyword=덕양구
+
+응답:
+  {
+    "ok": true,
+    "data": {
+      "locations": [
+        {
+          "id": 1540, "name": "능곡동",
+          "name1": "경기도", "name2": "고양시 덕양구", "name3": "능곡동",
+          "name1Id": 1256, "name2Id": 1529, "name3Id": 1540,
+          "depth": 3
+        }
+      ]
+    },
+    "count": 18,
+    "keyword": "덕양구"
+  }
 ```
 
 **공통 쿼리 파라미터:**
@@ -708,14 +748,16 @@ BottomNavigationBar
 ### 탭1: 당근 검색
 
 **지역 선택 UI:**
-- 시/도 선택 드롭다운 (예: 서울특별시)
-- 구/군 선택 드롭다운 (예: 강남구) — depth=2 레벨
-- 선택 후 `GET /search/daangn/districts?city=서울특별시` 로 구/군 목록 로드
+- 지역 검색 텍스트 입력창 (예: '덕양구', '역삼동', '능곡')
+- 입력 시 `GET /search/daangn/location?keyword=덕양구` → 자동완성 목록 표시
+- depth=3(동) 항목 선택 → `location_id`(name3Id) 저장 → 단건 검색
+- depth=2(구/군) 항목 선택 → `district`(name2) 저장 → 구/군 병렬 검색
 
 **검색 동작:**
-- 키워드 입력 + 검색 버튼 → `GET /search/daangn/district?keyword=아이폰&district=강남구-10`
-- 백엔드에서 강남구 하위 모든 동(역삼동, 논현동, 개포동 등) 자동 병렬 검색
-- 중복 제거 후 통합 결과 반환
+- 동 레벨 선택 시: `GET /search/daangn?keyword=아이폰&location_id=1540`
+- 구/군 레벨 선택 시: `GET /search/daangn/district?keyword=아이폰&district=덕양구`
+  - 내부적으로 Location API 재호출 → 하위 모든 동 자동 병렬 검색
+  - 응답의 `dong_count` 필드로 검색 범위 안내 가능
 - 결과: 상품 카드 리스트 (썸네일 / 제목 / 가격 / 동 지역 / 등록시간)
 - 카드 탭 → 당근 앱 딥링크 (`karrot://`) / 앱 없으면 당근 모바일 웹 오픈
 - 가격 범위 필터 지원 (선택)
@@ -817,6 +859,7 @@ BottomNavigationBar
 
 ---
 
+# 보류
 ## 13. 소셜 로그인 구현 상세
 
 ### 지원 소셜 로그인 제공자
@@ -826,6 +869,7 @@ BottomNavigationBar
 | 네이버 | `https://nid.naver.com/oauth2.0/authorize` | 네이버 개발자센터 앱 등록, Client ID/Secret |
 | 카카오 | `https://kauth.kakao.com/oauth/authorize` | 카카오 개발자센터 앱 등록, REST API 키 |
 | 구글 | `https://accounts.google.com/o/oauth2/auth` | Google Cloud Console OAuth2 클라이언트 |
+
 
 ### FastAPI 소셜 OAuth 흐름
 
@@ -1000,22 +1044,39 @@ volumes:
 - 바이브 코딩 지시: `/add-crawler-endpoint` 스킬
 - 동작 확인: `curl "http://localhost:5000/api/joongna/search?keyword=맥북&page=1"`
 
-#### Step 1-5. 당근 지역 데이터 + 스크래퍼 + 검색 엔드포인트
-- 생성 파일 1: `crawler/data/daangn_regions.py`
-  - 시/도 → 구/군 목록 딕셔너리
-  - 구/군 코드 → 하위 동(depth=3) 목록 딕셔너리
-  - `get_districts(city)` — 구/군 목록 반환
-  - `get_sub_regions(district_code)` — 하위 동 코드 목록 반환
-- 생성 파일 2: `crawler/scrapers/daangn_scraper.py`
-  - `search(keyword, region_code, page=1, count=20)` — 동 레벨 단건 검색
-  - `district_search(keyword, district_code, count=20)` — 구/군 → 하위 동 `ThreadPoolExecutor(max_workers=10)` 병렬 검색 → 중복 제거
-  - `window.__remixContext` JSON 파싱, 실패 시 BeautifulSoup 폴백
-  - 반환 형식: `source="daangn"`, 각 아이템에 `region` 포함
-- `crawler/server.py`에 엔드포인트 추가:
-  - `GET /api/daangn/search` — 동 레벨 단건
-  - `GET /api/daangn/district-search` — 구/군 레벨 병렬
-  - `GET /api/daangn/districts` — 구/군 목록 반환
-- 동작 확인: `curl "http://localhost:5000/api/daangn/district-search?keyword=아이폰&district=강남구-10"`
+#### Step 1-5. 당근 스크래퍼 + 검색 엔드포인트 ✅ 완료
+- `crawler/data/daangn_regions.py` — 빈 파일 유지 (지역 정적 데이터 불필요, Location API 실시간 호출로 대체)
+- `crawler/scrapers/daangn_scraper.py` 구현 내용:
+  - **상수**: `LOCATION_API_URL`, `LOCATION_API_HEADERS`, `LOCATION_API_TIMEOUT=10`
+  - `search_location(keyword)` — 당근 Location API 직접 호출, 예외는 호출자에게 전파
+    - 반환: `{"locations": [{"id", "name", "name1~3", "name1Id~3Id", "depth"}, ...]}`
+    - depth=2: 구/군 레벨, depth=3: 동/읍/면 레벨
+  - `search(keyword, location_id, page=1, count=20)` — 동 레벨 단건 검색
+    - `location_id`: `name3Id` 값 사용, None이면 전국 검색
+    - `resp.encoding = "utf-8"` 명시 (requests 자동감지 오류 방지)
+    - `window.__remixContext` JSON 파싱, 실패 시 BeautifulSoup 폴백
+    - 반환 형식: `{"items": [...], "total": N}`, `source="daangn"`, 각 아이템에 `location` 포함
+  - `multi_location_search(keyword, location_ids, count=20)` — 다수 동 병렬 검색
+    - `ThreadPoolExecutor(max_workers=DAANGN_DISTRICT_WORKERS)` 병렬 검색
+    - 상품 ID 기준 중복 제거 + 최신순 정렬
+  - `search_by_district(keyword, district, count=20)` — 구/군명 → 하위 동 자동 조회 후 병렬 검색
+    - `search_location(district)` → depth=3 항목의 `name3Id` 추출
+    - `name3Id`가 0건이면 `ValueError` 발생
+    - 반환: `{"items": [...], "total": N, "district": "덕양구", "dong_count": 18}`
+- `crawler/server.py` 엔드포인트:
+  - `GET /api/daangn/location?keyword=강남구` — `search_location()` 프록시
+    - 응답: `{"ok": true, "data": {"locations": [...]}, "count": N, "keyword": "강남구"}`
+    - 에러: Timeout → 504, RequestException → 502
+  - `GET /api/daangn/search?keyword=...&location_id=1540` — 동 레벨 단건 검색
+  - `GET /api/daangn/multi-search?keyword=...&district=덕양구&count=20` — 구/군 병렬 검색
+    - 응답에 `district`, `dong_count` 필드 포함
+    - 에러: ValueError → 404, Timeout → 504, RequestException → 502
+- 동작 확인:
+  ```bash
+  curl "http://localhost:5000/api/daangn/location?keyword=덕양구"
+  curl "http://localhost:5000/api/daangn/search?keyword=아이폰&location_id=1540"
+  curl "http://localhost:5000/api/daangn/multi-search?keyword=아이폰&district=덕양구"
+  ```
 
 #### Step 1-6. FastAPI 백엔드 초기화 + 검색 프록시 라우터
 - 바이브 코딩 지시: `/new-fastapi-router` 스킬 — search 라우터 생성
@@ -1026,11 +1087,16 @@ volumes:
   - `backend/app/routers/search.py` — 크롤러 API 프록시 (인증 불필요)
     - `GET /search/bunjang` → `http://crawler:5000/api/bunjang/search` 중계
     - `GET /search/joongna` → `http://crawler:5000/api/joongna/search` 중계
-    - `GET /search/daangn` → `http://crawler:5000/api/daangn/search` 중계
-    - `GET /search/daangn/district` → `http://crawler:5000/api/daangn/district-search` 중계
-    - `GET /search/daangn/districts` → `http://crawler:5000/api/daangn/districts` 중계
+    - `GET /search/daangn` → `http://crawler:5000/api/daangn/search` 중계 (파라미터: `keyword`, `location_id`, `page`, `count`)
+    - `GET /search/daangn/location` → `http://crawler:5000/api/daangn/location` 중계 (파라미터: `keyword`)
+    - `GET /search/daangn/district` → `http://crawler:5000/api/daangn/multi-search` 중계 (파라미터: `keyword`, `district`, `count`)
     - `GET /search/all` → 번개장터 + 중고나라 동시 호출 후 병합 반환
-- 동작 확인: `GET http://localhost:8000/search/bunjang?keyword=아이폰`
+- 동작 확인:
+  ```bash
+  GET http://localhost:8000/search/bunjang?keyword=아이폰
+  GET http://localhost:8000/search/daangn/location?keyword=덕양구
+  GET http://localhost:8000/search/daangn/district?keyword=아이폰&district=덕양구
+  ```
 
 #### Step 1-7. Flutter 앱 초기화
 - 바이브 코딩 지시: Flutter 프로젝트 생성
@@ -1060,9 +1126,14 @@ volumes:
 - 바이브 코딩 지시: `/new-flutter-screen` 스킬 — 당근 검색
 - 바이브 코딩 지시: `/new-riverpod-provider` 스킬 — 당근 검색 provider
 - 구현 내용:
-  - 시/도 드롭다운 → 구/군 드롭다운 (선택 시 `GET /search/daangn/districts` 호출)
+  - 지역 검색 텍스트 입력창 + 자동완성 드롭다운
+    - 입력마다 `GET /search/daangn/location?keyword=...` 호출 (debounce 300ms)
+    - 결과 목록에서 depth 표시: depth=2 → "구/군 전체", depth=3 → "동 단위"
+    - 선택 시 `selectedLocation` 상태 저장 (depth, id, name2, name3 등)
   - 키워드 입력창 + 검색 버튼
-  - `GET /search/daangn/district?keyword=...&district=...` 호출
+  - depth=3(동) 선택된 경우: `GET /search/daangn?keyword=...&location_id={name3Id}`
+  - depth=2(구/군) 선택된 경우: `GET /search/daangn/district?keyword=...&district={name2}`
+    - 검색 결과 상단에 "덕양구 18개 동 검색 결과" 안내 텍스트 표시 (`dong_count` 활용)
   - 결과: `ProductCard` 리스트 (당근 딥링크 `karrot://articles/{id}`)
   - 로딩 인디케이터, 에러 처리, 결과 없음 안내
 
@@ -1258,11 +1329,25 @@ volumes:
 ### 당근 (탭 직접 검색 전용)
 
 - **스케줄러 폴링 없음** — 앱 탭에서 사용자가 직접 검색할 때만 호출
-- **구/군 레벨 검색**: 선택된 구/군의 모든 동(depth=3)에 대해 병렬 검색 → 중복 제거
-  - 강남구 하위 동 수: 20~30개 수준 → ThreadPoolExecutor(max_workers=10) 권장
+- **지역 검색**: Flutter → `GET /api/daangn/location?keyword=덕양구` (크롤러 프록시) → 당근 Location API
+  - CORS 문제로 Flutter에서 당근 Location API 직접 호출 불가 → 반드시 크롤러 경유
+  - depth=2(구/군) 선택 → `district`명을 `/api/daangn/multi-search`에 전달
+  - depth=3(동) 선택 → `name3Id`를 `/api/daangn/search`에 전달
+- **구/군 레벨 검색**: `search_by_district(keyword, district)` 내부에서 Location API 재호출
+  - `search_location(district)` → depth=3 항목의 `name3Id` 목록 추출
+  - `multi_location_search(keyword, dong_ids)` → `ThreadPoolExecutor(max_workers=10)` 병렬 검색
+  - `dong_ids` 0건이면 `ValueError` → 404 응답
+  - 환경변수 `DAANGN_DISTRICT_WORKERS=10` (기본값)으로 워커 수 조절
+- **Location API 응답 구조**:
+  ```json
+  {"locations": [{"id": 1540, "name": "능곡동", "name1": "경기도",
+    "name2": "고양시 덕양구", "name3": "능곡동",
+    "name1Id": 1256, "name2Id": 1529, "name3Id": 1540, "depth": 3}]}
+  ```
 - `window.__remixContext` JSON 탐색 경로:
-  `state.loaderData["routes/kr.buy-sell.s.allPage"].fleamarketArticles`
-- 상품 ID가 URL 경로 형식(`/kr/buy-sell/abc123`)으로 오므로 파싱 주의
+  `state.loaderData["routes/kr.buy-sell.s"].allPage.fleamarketArticles`
+- 상품 ID가 URL 경로 형식(`/kr/buy-sell/abc123`)으로 오므로 `_extract_product_id()` 파싱 필요
+- `resp.encoding = "utf-8"` 명시 필수 (requests가 Content-Type 헤더 charset 누락 시 ISO-8859-1로 오해석)
 - 목록 페이지에서 판매자 닉네임·조회수·찜수 제공 안 됨
 - 앱 딥링크: `karrot://articles/{id}` (iOS `LSApplicationQueriesSchemes`에 `karrot` 등록 필요)
 

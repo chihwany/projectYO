@@ -41,60 +41,47 @@ elapsed = round(time.time() - start_time, 2)
 return _success(results, elapsed_seconds=elapsed)
 ```
 
-## 당근 구/군 → 하위 동 병렬 검색 패턴 (district-search)
+## 당근 구/군 → 하위 동 비동기 병렬 검색 패턴 (multi-search)
 
 ```python
-@app.route("/api/daangn/district-search")
-def daangn_district_search():
-    """구/군 레벨 선택 시 하위 동 전체에서 병렬 검색"""
+@app.get("/api/daangn/multi-search")
+def daangn_multi_search():
+    """구/군 단위 비동기 병렬 매물 검색 (asyncio + aiohttp)"""
+    import requests as _req
+    from scrapers.daangn_scraper import search_by_district
+
     keyword = request.args.get("keyword", "").strip()
-    district = request.args.get("district", "").strip()  # 예: "강남구-10"
-
     if not keyword:
-        return _error("keyword 파라미터가 필요합니다.")
+        return _error("keyword 파라미터가 필요합니다. (예: ?keyword=닌텐도)", 400)
+
+    district = request.args.get("district", "").strip()
     if not district:
-        return _error("district 파라미터가 필요합니다.")
+        return _error("district 파라미터가 필요합니다. (예: ?district=덕양구)", 400)
 
-    # daangn_regions.py에서 하위 동(depth=3) 목록 조회
-    from data.daangn_regions import get_sub_regions
-    sub_regions = get_sub_regions(district)  # ["역삼동-360", "논현동-123", ...]
+    count = int(request.args.get("count", 20))
 
-    if not sub_regions:
-        return _error(f"'{district}' 지역의 하위 동을 찾을 수 없습니다.", 404)
+    try:
+        result = search_by_district(keyword=keyword, district=district, count=count)
+    except ValueError as e:
+        return _error(str(e), 404)
+    except _req.exceptions.Timeout:
+        return _error("당근 지역 조회 시간이 초과되었습니다.", 504)
+    except _req.exceptions.RequestException as e:
+        return _error("당근 지역 조회에 실패했습니다.", 502)
 
-    # 각 동마다 병렬 검색
-    all_items = []
-    seen_ids = set()
-    start_time = time.time()
-
-    def search_region(region_code):
-        try:
-            return daangn.search(keyword=keyword, region=region_code)
-        except Exception as e:
-            print(f"[당근 {region_code} 오류] {e}")
-            return []
-
-    with ThreadPoolExecutor(max_workers=10) as ex:
-        futures = {ex.submit(search_region, r): r for r in sub_regions}
-        for future in as_completed(futures):
-            for item in future.result():
-                if item["id"] not in seen_ids:
-                    seen_ids.add(item["id"])
-                    all_items.append(item)
-
-    # 최신순 정렬
-    all_items.sort(key=lambda x: x.get("time", ""), reverse=True)
-
-    return _success(
-        all_items,
-        keyword=keyword,
-        district=district,
-        regions_searched=len(sub_regions),
-        count=len(all_items),
-        elapsed_seconds=round(time.time() - start_time, 2),
-        source="daangn",
-    )
+    return jsonify({
+        "ok": True,
+        "data": result["items"],
+        "count": result["total"],
+        "source": "daangn",
+        "district": result["district"],
+        "dong_count": result["dong_count"],
+    }), 200
 ```
+
+> **내부 동작:** `search_by_district()` → Location API (Redis 24시간 캐시)
+> → `asyncio.gather()` + `aiohttp`로 하위 동 전체 비동기 병렬 검색
+> → 중복 제거 + 최신순 정렬
 
 ## 완료 후 처리
 

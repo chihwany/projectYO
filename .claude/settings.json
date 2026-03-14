@@ -19,11 +19,18 @@
       "Bash(mkdir *)",
       "Bash(touch *)",
       "Bash(cat *)",
-      "Bash(find *)"
+      "Bash(find *)",
+      "Bash(command *)",
+      "Bash(curl *)",
+      "Bash(taskkill *)",
+      "Bash(sleep *)",
+      "Bash(source *)",
+      "Bash(.venv/Scripts/python.exe *)",
+      "Bash(.venv/Scripts/pip.exe *)",
+      "Bash(python -m *)"
     ],
     "deny": [
       "Bash(rm -rf *)",
-      "Bash(curl * | bash *)",
       "Bash(wget * | bash *)"
     ]
   }

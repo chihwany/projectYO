@@ -1,7 +1,22 @@
 {
   "permissions": {
     "allow": [
-      "Bash(source .venv/Scripts/activate)"
+      "Bash(source .venv/Scripts/activate)",
+      "Bash(curl -s http://localhost:5000/health)",
+      "Bash(curl -s \"http://localhost:5000/api/bunjang/search?keyword=%EC%95%84%EC%9D%B4%ED%8F%B0&page=1&count=3\")",
+      "Bash(curl -s \"http://localhost:5000/api/bunjang/search\")",
+      "Bash(taskkill //F //IM python.exe)",
+      "Bash(curl -s \"http://localhost:5000/\")",
+      "Bash(.venv/Scripts/python.exe server.py)",
+      "Bash(curl -s \"http://localhost:5000/api/joongna/search?keyword=%EC%95%84%EC%9D%B4%ED%8F%B0&count=2\")",
+      "Bash(.venv/Scripts/python.exe -c \":*)",
+      "Bash(curl -s \"http://localhost:5000/api/daangn/search?keyword=%EC%95%84%EC%9D%B4%ED%8F%B0&count=2\")",
+      "Bash(curl -s \"http://localhost:5000/api/daangn/districts?city=%EC%84%9C%EC%9A%B8%ED%8A%B9%EB%B3%84%EC%8B%9C\")",
+      "Bash(curl -s \"http://localhost:5000/api/daangn/district-search?keyword=%EC%95%84%EC%9D%B4%ED%8F%B0&district=%EA%B0%95%EB%82%A8%EA%B5%AC-381&count=3\")",
+      "Bash(curl -s -w \"\\\\n\\\\nTotal time: %{time_total}s\" \"http://localhost:5000/api/daangn/multi-search?keyword=닌텐도&district=덕양구\")",
+      "Bash(curl -s -w \"\\\\n\\\\nTotal time: %{time_total}s\" \"http://localhost:5000/api/daangn/multi-search?keyword=%EB%8B%8C%ED%85%90%EB%8F%84&district=%EB%8D%95%EC%96%91%EA%B5%AC\")",
+      "Bash(.venv/Scripts/pip.exe install aiohttp)",
+      "Bash(.venv/Scripts/python.exe -c \"import redis; r=redis.from_url\\(''redis://localhost:6379/0''\\); r.delete\\(''daangn:location:덕양구''\\); print\\(''캐시 삭제 완료''\\)\")"
     ]
   }
 }
