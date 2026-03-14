@@ -37,6 +37,7 @@
       "mcp__figma-remote-mcp__generate_diagram",
       "mcp__figma-remote-mcp__generate_figma_design",
       "WebFetch(domain:www.daangn.com)",
+      "WebFetch(domain:localhost)",
       "WebSearch",
       "Bash(crawler/.venv/Scripts/python.exe *)",
       "Bash(.venv/Scripts/python.exe -c *)",
