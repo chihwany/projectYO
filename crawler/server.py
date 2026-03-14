@@ -60,7 +60,10 @@ def index():
         # ── 중고나라 ──
         "GET /api/joongna/search": "중고나라 키워드 검색 (keyword, page, count, min_price, max_price, sort)",
         # ── 당근 ──
-        "GET /api/daangn/location": "당근 지역 검색 (keyword) — daangn_scraper.search_location() 경유",
+        "POST /api/daangn/regions/collect": "당근 전국 지역 데이터 즉시 수집 (스케줄러 수동 실행)",
+        "GET /api/daangn/regions": "전국 시/도 + 구/군 계층 목록 (Redis 스케줄러 데이터)",
+        "GET /api/daangn/regions/<regionId>/dongs": "특정 구/군의 동/읍/면 목록 (Redis 스케줄러 데이터)",
+        "GET /api/daangn/location": "당근 지역 검색 (keyword) — Redis 우선, fallback Location API",
         "GET /api/daangn/search": "당근 단건 검색 (keyword, location_id, page, count)",
         "GET /api/daangn/multi-search": "당근 구/군 단위 병렬 검색 (keyword, district, count) — 구/군명으로 하위 동 자동 조회 후 병렬 검색",
         # ── Phase 2-2: 번개장터 최신 수집 (Step 2-2에서 추가) ──
@@ -142,6 +145,95 @@ def joongna_search():
 
 
 # ── 당근 ──────────────────────────────────────────────────────────────────────
+
+
+@app.post("/api/daangn/regions/collect")
+def daangn_regions_collect():
+    """
+    당근 전국 지역 데이터 즉시 수집 (스케줄러 수동 실행).
+
+    collect_all_regions()를 즉시 실행하고 수집 결과를 반환합니다.
+    """
+    import json
+    import redis as _redis_mod
+
+    from region_scheduler import collect_all_regions
+
+    try:
+        collect_all_regions()
+    except Exception as e:
+        logger.error("지역 데이터 수동 수집 실패: %s", e)
+        return _error(f"수집 실패: {e}", 500)
+
+    _redis_url = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+    try:
+        r = _redis_mod.from_url(_redis_url, decode_responses=True)
+        regions = json.loads(r.get("daangn:regions:all") or "[]")
+        districts = json.loads(r.get("daangn:districts:all") or "[]")
+        return _success({
+            "message": "지역 데이터 수집 완료",
+            "provinces": len(regions),
+            "districts": len(districts),
+        })
+    except Exception as e:
+        return _error(f"수집은 완료되었으나 결과 조회 실패: {e}", 500)
+
+
+@app.get("/api/daangn/regions")
+def daangn_regions():
+    """
+    전국 시/도 + 구/군 계층 목록 반환.
+
+    스케줄러가 수집한 Redis 데이터에서 반환합니다.
+    데이터가 없으면 즉시 수집을 실행합니다.
+    """
+    import json
+    import redis as _redis_mod
+
+    _redis_url = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+    try:
+        r = _redis_mod.from_url(_redis_url, decode_responses=True)
+        data = r.get("daangn:regions:all")
+        if data:
+            regions = json.loads(data)
+            return _success(regions, count=len(regions))
+
+        # 데이터 없으면 즉시 수집
+        from region_scheduler import collect_all_regions
+        collect_all_regions()
+
+        data = r.get("daangn:regions:all")
+        if data:
+            regions = json.loads(data)
+            return _success(regions, count=len(regions))
+
+        return _error("지역 데이터 수집에 실패했습니다.", 503)
+    except Exception as e:
+        logger.error("지역 목록 조회 실패: %s", e)
+        return _error("지역 데이터를 가져올 수 없습니다.", 500)
+
+
+@app.get("/api/daangn/regions/<int:region_id>/dongs")
+def daangn_region_dongs(region_id: int):
+    """
+    특정 구/군의 동/읍/면 목록 반환.
+
+    Redis에서 daangn:dongs:{regionId} 조회.
+    """
+    import json
+    import redis as _redis_mod
+
+    _redis_url = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+    try:
+        r = _redis_mod.from_url(_redis_url, decode_responses=True)
+        data = r.get(f"daangn:dongs:{region_id}")
+        if data:
+            dongs = json.loads(data)
+            return _success(dongs, count=len(dongs))
+        return _error(f"regionId={region_id}에 해당하는 동 데이터가 없습니다.", 404)
+    except Exception as e:
+        logger.error("동 목록 조회 실패 (regionId=%s): %s", region_id, e)
+        return _error("동 데이터를 가져올 수 없습니다.", 500)
 
 
 @app.get("/api/daangn/location")
@@ -334,6 +426,26 @@ if __name__ == "__main__":
     host = os.getenv("FLASK_HOST", "0.0.0.0")
     port = int(os.getenv("FLASK_PORT", "5000"))
     debug = os.getenv("FLASK_DEBUG", "false").lower() == "true"
+
+    # 당근 지역 데이터 스케줄러 시작
+    try:
+        import redis as _redis_mod
+        from region_scheduler import collect_all_regions, create_region_scheduler
+
+        _redis_url = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+        r = _redis_mod.from_url(_redis_url, decode_responses=True)
+        r.ping()
+
+        region_scheduler = create_region_scheduler()
+        region_scheduler.start()
+        logger.info("당근 지역 스케줄러 시작 (매일 04:00 실행)")
+
+        # 최초 실행: Redis에 지역 데이터가 없으면 즉시 수집
+        if not r.exists("daangn:regions:all"):
+            logger.info("Redis에 지역 데이터 없음 — 최초 수집 시작")
+            collect_all_regions()
+    except Exception as e:
+        logger.warning("당근 지역 스케줄러 시작 실패 (서버는 정상 동작): %s", e)
 
     logger.info("크롤러 서버 시작: http://%s:%s (debug=%s)", host, port, debug)
     _log_endpoints()

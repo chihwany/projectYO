@@ -30,7 +30,15 @@
       "Bash(python -m *)",
       "Bash(node --version)",
       "Bash(claude mcp add --transport http figma-remote-mcp https://mcp.figma.com/mcp)",
-      "mcp__figma-remote-mcp__get_metadata"
+      "Bash(cd *)",
+      "mcp__figma-remote-mcp__get_metadata",
+      "mcp__figma-remote-mcp__get_design_context",
+      "mcp__figma-remote-mcp__get_screenshot",
+      "mcp__figma-remote-mcp__generate_diagram",
+      "mcp__figma-remote-mcp__generate_figma_design",
+      "WebFetch(domain:www.daangn.com)",
+      "WebSearch",
+      "Bash(crawler/.venv/Scripts/python.exe -c \":*)"
     ],
     "deny": [
       "Bash(rm -rf *)",

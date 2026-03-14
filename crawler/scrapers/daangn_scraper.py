@@ -200,50 +200,12 @@ LOCATION_API_HEADERS = {
 LOCATION_API_TIMEOUT = 10
 
 
-def search_location(keyword: str) -> dict:
+def _fetch_from_location_api(keyword: str) -> dict:
     """
-    당근 지역 검색 API 호출.
+    당근 Location API 직접 호출 (fallback 전용).
 
-    https://www.daangn.com/v1/api/search/kr/location 을 호출하여
-    키워드에 매칭되는 지역 목록을 반환합니다.
-
-    Args:
-        keyword: 지역 검색어 (예: '강남구', '역삼동', '능곡')
-
-    Returns:
-        {
-          "locations": [
-            {
-              "id": 1540,
-              "name": "능곡동",
-              "name1": "경기도",        # 시/도
-              "name2": "고양시 덕양구",  # 구/군
-              "name3": "능곡동",       # 동/읍/면 (depth=3일 때)
-              "name1Id": 1256,
-              "name2Id": 1529,
-              "name3Id": 1540,         # depth=3 → location_id로 사용
-              "depth": 3               # 2=구/군, 3=동/읍/면
-            }
-          ]
-        }
-
-    Raises:
-        requests.exceptions.Timeout: 타임아웃 발생 시
-        requests.exceptions.RequestException: 네트워크 오류 발생 시
+    Redis에 스케줄러 데이터가 없는 경우에만 사용합니다.
     """
-    # Redis 캐시 조회
-    cache_key = f"{_LOCATION_CACHE_PREFIX}{keyword}"
-    if _redis:
-        try:
-            cached = _redis.get(cache_key)
-            if cached:
-                locations = json.loads(cached)
-                logger.info("당근 Location API (캐시): keyword=%s → %d건", keyword, len(locations))
-                return {"locations": locations}
-        except Exception as e:
-            logger.warning("Redis 캐시 조회 실패: %s", e)
-
-    # aiohttp 단건 호출
     async def _fetch():
         timeout = aiohttp.ClientTimeout(total=LOCATION_API_TIMEOUT)
         async with aiohttp.ClientSession(headers=LOCATION_API_HEADERS, timeout=timeout) as session:
@@ -255,14 +217,83 @@ def search_location(keyword: str) -> dict:
     locations = body.get("locations", [])
 
     # Redis 캐시 저장
+    cache_key = f"{_LOCATION_CACHE_PREFIX}{keyword}"
     if _redis and locations:
         try:
             _redis.setex(cache_key, _LOCATION_CACHE_TTL, json.dumps(locations, ensure_ascii=False))
         except Exception as e:
             logger.warning("Redis 캐시 저장 실패: %s", e)
 
-    logger.info("당근 Location API: keyword=%s → %d건", keyword, len(locations))
+    logger.info("당근 Location API (fallback): keyword=%s → %d건", keyword, len(locations))
     return {"locations": locations}
+
+
+def search_location(keyword: str) -> dict:
+    """
+    당근 지역 검색 — Redis 우선 조회.
+
+    스케줄러가 수집한 Redis 데이터에서 검색하고,
+    Redis에 데이터가 없는 경우에만 fallback으로 Location API를 호출합니다.
+
+    Args:
+        keyword: 지역 검색어 (예: '강남구', '역삼동', '능곡')
+
+    Returns:
+        {
+          "locations": [
+            {
+              "regionId": 381,          # 구/군 검색 시
+              "name": "강남구",
+              "province": "서울특별시",
+              "depth": 2
+            }
+            또는
+            {
+              "id": 1540,               # Location API fallback 시
+              "name": "능곡동",
+              "name1": "경기도",
+              "name2": "고양시 덕양구",
+              "name3": "능곡동",
+              "name1Id": 1256,
+              "name2Id": 1529,
+              "name3Id": 1540,
+              "depth": 3
+            }
+          ]
+        }
+
+    Raises:
+        requests.exceptions.Timeout: fallback API 타임아웃 발생 시
+        requests.exceptions.RequestException: fallback 네트워크 오류 발생 시
+    """
+    # 1순위: Redis에서 스케줄러 수집 데이터 검색 (daangn:districts:all)
+    if _redis:
+        try:
+            districts_json = _redis.get("daangn:districts:all")
+            if districts_json:
+                all_districts = json.loads(districts_json)
+                matched = [d for d in all_districts if keyword in d["name"]]
+                if matched:
+                    logger.info("당근 지역 검색 (Redis): keyword=%s → %d건", keyword, len(matched))
+                    return {"locations": matched}
+        except Exception as e:
+            logger.warning("Redis districts 조회 실패: %s", e)
+
+    # 2순위: 기존 location 캐시 확인 (daangn:location:{keyword})
+    cache_key = f"{_LOCATION_CACHE_PREFIX}{keyword}"
+    if _redis:
+        try:
+            cached = _redis.get(cache_key)
+            if cached:
+                locations = json.loads(cached)
+                logger.info("당근 지역 검색 (캐시): keyword=%s → %d건", keyword, len(locations))
+                return {"locations": locations}
+        except Exception as e:
+            logger.warning("Redis 캐시 조회 실패: %s", e)
+
+    # 3순위 (fallback): Redis에 데이터가 전혀 없는 경우에만 Location API 호출
+    logger.warning("당근 지역 검색: Redis에 데이터 없음, fallback API 호출 (keyword=%s)", keyword)
+    return _fetch_from_location_api(keyword)
 
 
 # ── 검색 함수 ──────────────────────────────────────────────────────────────────
