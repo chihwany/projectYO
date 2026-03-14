@@ -433,6 +433,100 @@ async def _async_search_one(
     return items[:count]
 
 
+def search_district_direct(
+    keyword: str,
+    district: str,
+    count: int = 300,
+) -> dict:
+    """
+    구/군 레벨 regionId로 직접 키워드 검색 (Remix _data loader).
+
+    기존 search_by_district()가 동 레벨 N번 요청하는 것과 달리,
+    구 레벨 regionId 1번 요청으로 하위 동 전체 매물을 가져온다.
+
+    Args:
+        keyword:  검색어 (예: '닌텐도', '아이폰')
+        district: 구/군명 (예: '덕양구', '종로구')
+        count:    최대 결과 수 (기본 300, 최대 ~300건 반환)
+
+    Returns:
+        {
+          "items": [...],        # 표준 스키마 10필드
+          "total": 248,
+          "district": "덕양구",
+          "regionId": 1529
+        }
+    """
+    # 1. 구/군명으로 regionId 조회
+    location_result = search_location(district)
+    locations = location_result["locations"]
+
+    # Redis districts에서 온 경우 regionId 직접 사용
+    region_id = None
+    for loc in locations:
+        if loc.get("regionId"):
+            region_id = loc["regionId"]
+            break
+        # Location API fallback인 경우 name2Id 사용
+        if loc.get("name2Id") and loc.get("depth") == 2:
+            region_id = loc["name2Id"]
+            break
+        if loc.get("name2Id") and loc.get("depth") == 3:
+            region_id = loc["name2Id"]
+            break
+
+    if not region_id:
+        raise ValueError(
+            f"'{district}'에 해당하는 구/군 regionId를 찾을 수 없습니다."
+        )
+
+    # 2. _data loader로 구 레벨 직접 검색 (1번 요청)
+    data_headers = {
+        "User-Agent": HEADERS["User-Agent"],
+        "Accept": "application/json",
+        "Accept-Language": "ko-KR,ko;q=0.9",
+    }
+
+    async def _fetch():
+        params = {
+            "search": keyword,
+            "in": region_id,
+            "_data": "routes/kr.buy-sell.s",
+        }
+        timeout = aiohttp.ClientTimeout(total=15)
+        async with aiohttp.ClientSession(headers=data_headers, timeout=timeout) as session:
+            async with session.get(SEARCH_URL, params=params) as resp:
+                resp.raise_for_status()
+                return await resp.json(content_type=None)
+
+    try:
+        data = asyncio.run(_fetch())
+    except Exception as e:
+        logger.error("당근 district-search 실패 (keyword=%s, regionId=%s): %s", keyword, region_id, e)
+        return {"items": [], "total": 0, "district": district, "regionId": region_id}
+
+    articles = (
+        data.get("allPage", {})
+        .get("fleamarketArticles", [])
+    )
+
+    # 3. 표준 스키마로 변환
+    items = [_parse_item(a) for a in articles]
+    items = items[:count]
+
+    logger.info(
+        "당근 district-search: keyword=%s district=%s regionId=%s → %d건",
+        keyword, district, region_id, len(items),
+    )
+
+    return {
+        "items": items,
+        "total": len(items),
+        "district": district,
+        "regionId": region_id,
+    }
+
+
 def multi_location_search(
     keyword: str,
     location_ids: list[int],

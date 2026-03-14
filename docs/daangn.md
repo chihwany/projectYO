@@ -327,6 +327,50 @@ window.__remixContext
 - **판매자 정보 미제공:** 당근마켓 목록 페이지는 판매자 닉네임을 노출하지 않음
 - **시간 표현:** `createdAt` ISO 형식 기준
 - **당근은 폴링 없음:** 스케줄러 대상 아님. 앱 탭에서 사용자가 직접 검색할 때만 호출
+- **구 레벨 직접 검색 (`_data` loader):** `?in={regionId}&search={keyword}&_data=routes/kr.buy-sell.s` 파라미터로 구 레벨 regionId에 키워드를 함께 전달하면, 하위 동 전체 매물을 JSON으로 직접 수신 가능 (HTML 파싱 불필요, 1번 요청으로 최대 300건)
+
+---
+
+## 구 레벨 직접 검색 (district-search)
+
+### 개요
+
+기존 `multi-search`가 동 레벨 N번 요청하는 것과 달리, 구/군 regionId로 **1번 요청**하여 하위 동 전체 매물을 가져온다.
+
+### 요청 정보
+
+| 항목 | 내용 |
+|---|---|
+| HTTP 메서드 | `GET` |
+| 요청 URL | `https://www.daangn.com/kr/buy-sell/s/` |
+
+### Query String 파라미터
+
+| 파라미터 | 예시 값 | 설명 |
+|---|---|---|
+| `search` | `닌텐도` | 검색 키워드 |
+| `in` | `1529` | 구/군 regionId |
+| `_data` | `routes/kr.buy-sell.s` | Remix _data loader (JSON 직접 수신) |
+
+### 엔드포인트
+
+```
+GET /api/daangn/district-search?keyword=닌텐도&district=덕양구&count=300
+```
+
+### 기존 API와 비교 (실측 — 덕양구, "닌텐도")
+
+| | 기존 API (multi-search) | 새 API (district-search) |
+|---|---|---|
+| 요청 수 | 46번 (동 개수만큼) | **1번** |
+| 매물 수 | 331건 | 300건 (API 최대 한도) |
+| 겹치는 매물 | 0건 (서로 다른 결과 반환) |
+| 소요 시간 | 0.47초 | **0.24초** |
+| 방식 | `only_on_sale=true` + HTML 파싱 | `_data` loader JSON |
+
+> **참고:** 두 API가 서로 다른 매물을 반환한다. 기존 API는 `only_on_sale=true`로 HTML을 파싱하고,
+> 새 API는 `_data` loader로 JSON을 직접 수신하여 당근 서버 내부에서 다른 검색 로직을 탄다.
+> `count=1000`을 요청해도 당근 API 서버 제한으로 구당 최대 300건이 한계.
 
 ---
 

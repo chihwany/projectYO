@@ -5,11 +5,11 @@
   1. Redis에서 279개 구/군 목록 로드
   2. 전국 매물 병렬 수집 (20개씩 배치, rate limit 적응형 delay)
   3. Redis seen_ids와 비교 → 새 매물 감지
-  4. 새 매물 키워드 매칭 → 알림 발송
+  4. 1분 이내 등록된 새 매물 필터
+  5. 키워드 매칭 → 알림 발송
 
-참고: 당근 API는 구/군별 최신 매물 ~300건을 반환하며, 이 목록은 실시간이 아닌
-캐시 기반 로테이션 방식으로 갱신된다. 따라서 createdAt 기반 시간 필터 대신
-seen_ids 비교를 통해 "이전에 없던 매물 = 새 매물"로 감지한다.
+새 매물 감지: seen_ids 비교로 "이전에 없던 매물"을 감지한 뒤,
+createdAt 기준 1분 이내 등록된 매물만 알림 대상으로 필터링한다.
 
 Redis 키:
   daangn:listing:seen:{regionId}  — 구/군별 확인된 매물 ID 목록 (TTL 24h)
@@ -21,6 +21,7 @@ import json
 import logging
 import os
 import time
+from datetime import datetime, timedelta, timezone
 
 import aiohttp
 import redis
@@ -47,6 +48,8 @@ BATCH_SIZE = 20
 TTL_24H = 86400
 INTERVAL_MINUTES = 1
 MAX_RETRY = 5
+
+KST = timezone(timedelta(hours=9))
 
 # ── Redis 연결 ────────────────────────────────────────────────────────────────
 
@@ -203,6 +206,28 @@ def _detect_new_listings(region_id: int, articles: list[dict]) -> list[dict]:
     return new_articles
 
 
+# ── 1분 이내 매물 필터 ────────────────────────────────────────────────────────
+
+
+def _filter_recent(articles: list[dict], minutes: int = INTERVAL_MINUTES) -> list[dict]:
+    """createdAt 기준으로 최근 N분 이내 등록된 매물만 반환"""
+    now = datetime.now(KST)
+    cutoff = now - timedelta(minutes=minutes)
+    recent = []
+
+    for a in articles:
+        created_str = a.get("createdAt", "")
+        if not created_str:
+            continue
+        try:
+            created = datetime.fromisoformat(created_str)
+            if created >= cutoff:
+                recent.append(a)
+        except (ValueError, TypeError):
+            continue
+
+    return recent
+
 
 # ── 키워드 매칭 ───────────────────────────────────────────────────────────────
 
@@ -223,7 +248,7 @@ def _match_keywords(articles: list[dict], keyword: str) -> list[dict]:
 
 def collect_listings(test_keyword: str | None = None) -> dict:
     """
-    전국 매물 수집 → seen_ids 기반 새 매물 감지 → 키워드 매칭.
+    전국 매물 수집 → seen_ids 기반 새 매물 감지 → 1분 이내 필터 → 키워드 매칭.
 
     Args:
         test_keyword: 테스트용 키워드. 지정 시 새 매물 중 매칭 결과도 반환.
@@ -248,7 +273,7 @@ def collect_listings(test_keyword: str | None = None) -> dict:
     # 2. 전국 매물 수집
     all_listings = asyncio.run(_collect_all_listings(districts))
 
-    # 3. 새 매물 감지
+    # 3. 새 매물 감지 (seen_ids 비교)
     total_articles = 0
     total_new = 0
     all_new_articles = []
@@ -260,12 +285,34 @@ def collect_listings(test_keyword: str | None = None) -> dict:
             total_new += len(new_articles)
             all_new_articles.extend(new_articles)
 
+    # 4. 1분 이내 등록된 새 매물만 필터
+    recent_articles = _filter_recent(all_new_articles, INTERVAL_MINUTES)
+
     duration = round(time.time() - start_time, 2)
 
-    # 4. 키워드 매칭 (seen_ids 기반 새 매물 전체 대상)
+    # 5. 키워드 매칭 (1분 이내 새 매물 대상)
     keyword_matched = []
-    if test_keyword and all_new_articles:
-        keyword_matched = _match_keywords(all_new_articles, test_keyword)
+    if test_keyword and recent_articles:
+        keyword_matched = _match_keywords(recent_articles, test_keyword)
+
+    # ── 알림 발송 (1분 이내 + 키워드 매칭된 매물만) ──
+    # TODO: DB에서 사용자 등록 키워드 목록 조회
+    # TODO: 매칭된 매물에 대해 FCM 알림 발송
+    # if keyword_matched:
+    #     for article in keyword_matched:
+    #         notification = {
+    #             "title": f"[당근] {article.get('title', '')}",
+    #             "body": f"{article.get('price')}원 · {article.get('user', {}).get('region', {}).get('name', '')}",
+    #             "data": {
+    #                 "url": article.get("href", ""),
+    #                 "platform": "daangn",
+    #                 "keyword": test_keyword,
+    #                 "price": article.get("price"),
+    #                 "region": article.get("user", {}).get("region", {}).get("name", ""),
+    #             },
+    #         }
+    #         # send_fcm_notification(user_fcm_token, notification)
+    #         # save_notification_history(user_id, article["id"], notification)
 
     # 수집 상태 Redis에 저장
     last_run = {
@@ -274,16 +321,18 @@ def collect_listings(test_keyword: str | None = None) -> dict:
         "districts_success": len(all_listings),
         "total_articles": total_articles,
         "new_listings": total_new,
+        "recent_listings": len(recent_articles),
         "duration_seconds": duration,
     }
     _redis.set("daangn:listing:last_run", json.dumps(last_run, ensure_ascii=False))
 
     logger.info(
-        "[listing_scheduler] 수집 완료: %d/%d 구/군, 전체 %d건, 새 매물 %d건, 소요 %.1f초",
+        "[listing_scheduler] 수집 완료: %d/%d 구/군, 전체 %d건, 새 매물 %d건, 1분 이내 %d건, 소요 %.1f초",
         len(all_listings),
         len(districts),
         total_articles,
         total_new,
+        len(recent_articles),
         duration,
     )
 
@@ -296,6 +345,7 @@ def collect_listings(test_keyword: str | None = None) -> dict:
         result["keyword_test"] = {
             "keyword": test_keyword,
             "total_new": total_new,
+            "recent_count": len(recent_articles),
             "matched_count": len(keyword_matched),
             "matched_items": [
                 {
@@ -316,17 +366,62 @@ def collect_listings(test_keyword: str | None = None) -> dict:
 
 
 def create_listing_scheduler():
-    """스케줄러 인스턴스 생성 및 job 등록"""
+    """스케줄러 인스턴스 생성 및 job 등록 (매분 정각 실행)"""
     from apscheduler.schedulers.background import BackgroundScheduler
-    from apscheduler.triggers.interval import IntervalTrigger
+    from apscheduler.triggers.cron import CronTrigger
 
     scheduler = BackgroundScheduler()
     scheduler.add_job(
         collect_listings,
-        trigger=IntervalTrigger(minutes=INTERVAL_MINUTES),
+        trigger=CronTrigger(second=0),  # 매분 00초에 실행
         id="daangn_listing_collector",
         name="당근 전국 매물 수집 및 알림",
         replace_existing=True,
         max_instances=1,
     )
     return scheduler
+
+
+# ── 직접 실행 (1분 주기 스케줄러) ─────────────────────────────────────────────
+
+
+if __name__ == "__main__":
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(levelname)s %(message)s",
+    )
+
+    # 테스트 키워드 (환경변수 또는 기본값)
+    test_keyword = os.getenv("TEST_KEYWORD", "닌텐도")
+
+    logger.info("[listing_scheduler] 스케줄러 시작 (주기: %d분, 키워드: %s)", INTERVAL_MINUTES, test_keyword)
+
+    # 최초 1회 즉시 실행 (seen_ids 초기화)
+    logger.info("[listing_scheduler] === 최초 수집 (seen_ids 초기화) ===")
+    result = collect_listings(test_keyword=test_keyword)
+    logger.info("[listing_scheduler] 초기화 완료: %d/%d 구/군, 새 매물 %d건",
+                result.get("districts_success", 0),
+                result.get("districts_checked", 0),
+                result.get("new_listings", 0))
+
+    # APScheduler CronTrigger로 매분 정각 실행
+    from apscheduler.schedulers.blocking import BlockingScheduler
+    from apscheduler.triggers.cron import CronTrigger
+
+    scheduler = BlockingScheduler()
+    scheduler.add_job(
+        collect_listings,
+        trigger=CronTrigger(second=0),  # 매분 00초에 실행
+        id="daangn_listing_collector",
+        name="당근 전국 매물 수집 및 알림",
+        kwargs={"test_keyword": test_keyword},
+        replace_existing=True,
+        max_instances=1,
+    )
+
+    logger.info("[listing_scheduler] 스케줄러 등록 완료. 매분 정각에 수집합니다. (Ctrl+C로 종료)")
+
+    try:
+        scheduler.start()
+    except (KeyboardInterrupt, SystemExit):
+        logger.info("[listing_scheduler] 스케줄러 종료")

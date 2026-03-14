@@ -68,6 +68,7 @@ def index():
         "GET /api/daangn/listings/status": "당근 매물 수집 최근 상태 조회",
         "GET /api/daangn/search": "당근 단건 검색 (keyword, location_id, page, count)",
         "GET /api/daangn/multi-search": "당근 구/군 단위 병렬 검색 (keyword, district, count) — 구/군명으로 하위 동 자동 조회 후 병렬 검색",
+        "GET /api/daangn/district-search": "당근 구 레벨 직접 검색 (keyword, district, count) — _data loader로 1번 요청, 최대 300건",
         # ── Phase 2-2: 번개장터 최신 수집 (Step 2-2에서 추가) ──
         # "GET /api/bunjang/recent": "번개장터 최신 매물 수집 (within_minutes)",
         # ── Phase 2-3: 중고나라 최신 수집 (Step 2-3에서 추가) ──
@@ -429,6 +430,49 @@ def daangn_multi_search():
         "source": "daangn",
         "district": result["district"],
         "dong_count": result["dong_count"],
+    }), 200
+
+
+@app.get("/api/daangn/district-search")
+def daangn_district_search():
+    """
+    당근 구 레벨 직접 키워드 검색 (Remix _data loader).
+
+    구/군 regionId로 1번 요청하여 하위 동 전체 매물을 가져온다.
+    기존 multi-search가 동 N개 × 개별 요청하는 것과 달리 1번 요청으로 최대 300건.
+
+    Query Parameters:
+        keyword  (str, 필수): 검색어 (예: '닌텐도', '아이폰')
+        district (str, 필수): 구/군명 (예: '덕양구', '종로구')
+        count    (int, 선택): 최대 결과 수 (기본 300)
+    """
+    from scrapers.daangn_scraper import search_district_direct
+
+    keyword = request.args.get("keyword", "").strip()
+    if not keyword:
+        return _error("keyword 파라미터가 필요합니다. (예: ?keyword=닌텐도)", 400)
+
+    district = request.args.get("district", "").strip()
+    if not district:
+        return _error("district 파라미터가 필요합니다. (예: ?district=덕양구)", 400)
+
+    count = int(request.args.get("count", 300))
+
+    try:
+        result = search_district_direct(keyword=keyword, district=district, count=count)
+    except ValueError as e:
+        return _error(str(e), 404)
+    except Exception as e:
+        logger.error("당근 district-search 오류 (district=%s): %s", district, e)
+        return _error("당근 구 레벨 검색에 실패했습니다.", 502)
+
+    return jsonify({
+        "ok": True,
+        "data": result["items"],
+        "count": result["total"],
+        "source": "daangn",
+        "district": result["district"],
+        "regionId": result["regionId"],
     }), 200
 
 
