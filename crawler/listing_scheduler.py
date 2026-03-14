@@ -5,7 +5,11 @@
   1. Redis에서 279개 구/군 목록 로드
   2. 전국 매물 병렬 수집 (20개씩 배치, rate limit 적응형 delay)
   3. Redis seen_ids와 비교 → 새 매물 감지
-  4. 1분 이내 등록된 새 매물만 키워드 매칭 → 알림 발송
+  4. 새 매물 키워드 매칭 → 알림 발송
+
+참고: 당근 API는 구/군별 최신 매물 ~300건을 반환하며, 이 목록은 실시간이 아닌
+캐시 기반 로테이션 방식으로 갱신된다. 따라서 createdAt 기반 시간 필터 대신
+seen_ids 비교를 통해 "이전에 없던 매물 = 새 매물"로 감지한다.
 
 Redis 키:
   daangn:listing:seen:{regionId}  — 구/군별 확인된 매물 ID 목록 (TTL 24h)
@@ -17,7 +21,6 @@ import json
 import logging
 import os
 import time
-from datetime import datetime, timedelta, timezone
 
 import aiohttp
 import redis
@@ -44,8 +47,6 @@ BATCH_SIZE = 20
 TTL_24H = 86400
 INTERVAL_MINUTES = 1
 MAX_RETRY = 5
-
-KST = timezone(timedelta(hours=9))
 
 # ── Redis 연결 ────────────────────────────────────────────────────────────────
 
@@ -202,28 +203,6 @@ def _detect_new_listings(region_id: int, articles: list[dict]) -> list[dict]:
     return new_articles
 
 
-# ── 1분 이내 매물 필터 ────────────────────────────────────────────────────────
-
-
-def _filter_recent(articles: list[dict], minutes: int = INTERVAL_MINUTES) -> list[dict]:
-    """createdAt 기준으로 최근 N분 이내 등록된 매물만 반환"""
-    now = datetime.now(KST)
-    cutoff = now - timedelta(minutes=minutes)
-    recent = []
-
-    for a in articles:
-        created_str = a.get("createdAt", "")
-        if not created_str:
-            continue
-        try:
-            created = datetime.fromisoformat(created_str)
-            if created >= cutoff:
-                recent.append(a)
-        except (ValueError, TypeError):
-            continue
-
-    return recent
-
 
 # ── 키워드 매칭 ───────────────────────────────────────────────────────────────
 
@@ -244,7 +223,7 @@ def _match_keywords(articles: list[dict], keyword: str) -> list[dict]:
 
 def collect_listings(test_keyword: str | None = None) -> dict:
     """
-    전국 매물 수집 → 새 매물 감지 → 1분 이내 매물 필터 → 키워드 매칭.
+    전국 매물 수집 → seen_ids 기반 새 매물 감지 → 키워드 매칭.
 
     Args:
         test_keyword: 테스트용 키워드. 지정 시 새 매물 중 매칭 결과도 반환.
@@ -281,15 +260,12 @@ def collect_listings(test_keyword: str | None = None) -> dict:
             total_new += len(new_articles)
             all_new_articles.extend(new_articles)
 
-    # 4. 1분 이내 매물만 필터
-    recent_articles = _filter_recent(all_new_articles, INTERVAL_MINUTES)
-
     duration = round(time.time() - start_time, 2)
 
-    # 5. 키워드 매칭 (1분 이내 매물 대상)
+    # 4. 키워드 매칭 (seen_ids 기반 새 매물 전체 대상)
     keyword_matched = []
-    if test_keyword and recent_articles:
-        keyword_matched = _match_keywords(recent_articles, test_keyword)
+    if test_keyword and all_new_articles:
+        keyword_matched = _match_keywords(all_new_articles, test_keyword)
 
     # 수집 상태 Redis에 저장
     last_run = {
@@ -298,18 +274,16 @@ def collect_listings(test_keyword: str | None = None) -> dict:
         "districts_success": len(all_listings),
         "total_articles": total_articles,
         "new_listings": total_new,
-        "recent_listings": len(recent_articles),
         "duration_seconds": duration,
     }
     _redis.set("daangn:listing:last_run", json.dumps(last_run, ensure_ascii=False))
 
     logger.info(
-        "[listing_scheduler] 수집 완료: %d/%d 구/군, 전체 %d건, 새 매물 %d건, 1분 이내 %d건, 소요 %.1f초",
+        "[listing_scheduler] 수집 완료: %d/%d 구/군, 전체 %d건, 새 매물 %d건, 소요 %.1f초",
         len(all_listings),
         len(districts),
         total_articles,
         total_new,
-        len(recent_articles),
         duration,
     )
 
@@ -322,7 +296,6 @@ def collect_listings(test_keyword: str | None = None) -> dict:
         result["keyword_test"] = {
             "keyword": test_keyword,
             "total_new": total_new,
-            "recent_count": len(recent_articles),
             "matched_count": len(keyword_matched),
             "matched_items": [
                 {

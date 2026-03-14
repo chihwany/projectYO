@@ -38,7 +38,8 @@
       "mcp__figma-remote-mcp__generate_figma_design",
       "WebFetch(domain:www.daangn.com)",
       "WebSearch",
-      "Bash(crawler/.venv/Scripts/python.exe *)"
+      "Bash(crawler/.venv/Scripts/python.exe *)",
+      "Bash(.venv/Scripts/python.exe -c \":*)"
     ],
     "deny": [
       "Bash(rm -rf *)",
