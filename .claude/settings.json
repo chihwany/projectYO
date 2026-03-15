@@ -41,7 +41,10 @@
       "WebSearch",
       "Bash(crawler/.venv/Scripts/python.exe *)",
       "Bash(.venv/Scripts/python.exe -c *)",
-      "Bash(crawler/.venv/Scripts/pip.exe *)"
+      "Bash(crawler/.venv/Scripts/pip.exe *)",
+      "Bash(powershell -Command \"Get-Service redis* 2>$null; Get-Process redis* 2>$null; Get-Command redis* 2>$null\")",
+      "Bash(powershell -Command \"Get-Service redis*\")",
+      "Bash(powershell -Command \"Get-Process redis*\")"
     ],
     "deny": [
       "Bash(rm -rf *)",

@@ -64,8 +64,10 @@ def index():
         "GET /api/daangn/regions": "전국 시/도 + 구/군 계층 목록 (Redis 스케줄러 데이터)",
         "GET /api/daangn/regions/<regionId>/dongs": "특정 구/군의 동/읍/면 목록 (Redis 스케줄러 데이터)",
         "GET /api/daangn/location": "당근 지역 검색 (keyword) — Redis 우선, fallback Location API",
-        "POST /api/daangn/listings/collect": "당근 전국 매물 즉시 수집 (test_keyword로 키워드 매칭 테스트 가능)",
-        "GET /api/daangn/listings/status": "당근 매물 수집 최근 상태 조회",
+        "POST /api/daangn/listings/collect": "당근 전국 매물 즉시 수집 — 구 레벨 _data API (test_keyword로 키워드 매칭 테스트 가능)",
+        "POST /api/daangn/listings/collect-dong": "당근 전국 매물 즉시 수집 — 동 레벨 HTML 파싱 (test_keyword로 키워드 매칭 테스트 가능)",
+        "GET /api/daangn/listings/status": "당근 매물 수집 최근 상태 조회 (구 레벨)",
+        "GET /api/daangn/listings/status-dong": "당근 매물 수집 최근 상태 조회 (동 레벨)",
         "GET /api/daangn/search": "당근 단건 검색 (keyword, location_id, page, count)",
         "GET /api/daangn/multi-search": "당근 구/군 단위 병렬 검색 (keyword, district, count) — 구/군명으로 하위 동 자동 조회 후 병렬 검색",
         "GET /api/daangn/district-search": "당근 구 레벨 직접 검색 (keyword, district, count) — _data loader로 1번 요청, 최대 300건",
@@ -265,7 +267,7 @@ def daangn_listings_collect():
 
 @app.get("/api/daangn/listings/status")
 def daangn_listings_status():
-    """당근 매물 수집 최근 상태 조회."""
+    """당근 매물 수집 최근 상태 조회 (구 레벨)."""
     import json
     import redis as _redis_mod
 
@@ -278,6 +280,51 @@ def daangn_listings_status():
         return _error("아직 매물 수집이 실행되지 않았습니다.", 404)
     except Exception as e:
         logger.error("매물 수집 상태 조회 실패: %s", e)
+        return _error("상태 조회에 실패했습니다.", 500)
+
+
+@app.post("/api/daangn/listings/collect-dong")
+def daangn_listings_collect_dong():
+    """
+    당근 전국 매물 즉시 수집 — 동 레벨 HTML 파싱 (수동 실행 / 테스트용).
+
+    구 레벨 _data API가 불안정할 때 사용하는 대체 수집 방식.
+    전국 8,208개 동을 HTML 파싱하여 수집하므로 ~4분 30초 소요.
+
+    Query Parameters:
+        test_keyword (str, 선택): 키워드 매칭 테스트. 새 매물 중 매칭 결과 반환.
+    """
+    from listing_scheduler_dong import collect_listings_dong
+
+    test_keyword = request.args.get("test_keyword", "").strip() or None
+
+    try:
+        result = collect_listings_dong(test_keyword=test_keyword)
+    except Exception as e:
+        logger.error("매물 수집(동 레벨) 수동 실행 실패: %s", e)
+        return _error(f"매물 수집 실패: {e}", 500)
+
+    if "error" in result:
+        return _error(result["error"], 503)
+
+    return _success(result)
+
+
+@app.get("/api/daangn/listings/status-dong")
+def daangn_listings_status_dong():
+    """당근 매물 수집 최근 상태 조회 (동 레벨)."""
+    import json
+    import redis as _redis_mod
+
+    _redis_url = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+    try:
+        r = _redis_mod.from_url(_redis_url, decode_responses=True)
+        data = r.get("daangn:listing_dong:last_run")
+        if data:
+            return _success(json.loads(data))
+        return _error("아직 동 레벨 매물 수집이 실행되지 않았습니다.", 404)
+    except Exception as e:
+        logger.error("매물 수집(동 레벨) 상태 조회 실패: %s", e)
         return _error("상태 조회에 실패했습니다.", 500)
 
 
