@@ -535,6 +535,16 @@ if __name__ == "__main__":
     except Exception as e:
         logger.warning("당근 지역 스케줄러 시작 실패 (서버는 정상 동작): %s", e)
 
+    # 당근 매물 수집 스케줄러 시작 (매분 정각 실행)
+    try:
+        from listing_scheduler import create_listing_scheduler
+
+        listing_scheduler = create_listing_scheduler()
+        listing_scheduler.start()
+        logger.info("당근 매물 수집 스케줄러 시작 (매분 정각 실행)")
+    except Exception as e:
+        logger.warning("당근 매물 수집 스케줄러 시작 실패 (서버는 정상 동작): %s", e)
+
     logger.info("크롤러 서버 시작: http://%s:%s (debug=%s)", host, port, debug)
     _log_endpoints()
     app.run(host=host, port=port, debug=debug)
