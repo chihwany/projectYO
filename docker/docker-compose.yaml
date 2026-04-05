@@ -1,6 +1,6 @@
 services:
   postgres:
-    image: postgres:18-alpine
+    image: postgres:16-alpine
     container_name: projectyo_postgres
     environment:
       POSTGRES_DB: project-db
@@ -17,7 +17,7 @@ services:
       retries: 5
 
   redis:
-    image: redis:8.0-alpine
+    image: redis:7.0-alpine
     container_name: projectyo_redis
     ports:
       - "6379:6379"

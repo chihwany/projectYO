@@ -44,10 +44,10 @@ HEADERS = {
     "Accept-Language": "ko-KR,ko;q=0.9",
 }
 
-BATCH_SIZE = 20
+BATCH_SIZE = 50
 TTL_24H = 86400
 INTERVAL_MINUTES = 1
-MAX_RETRY = 5
+MAX_RETRY = 2
 
 KST = timezone(timedelta(hours=9))
 
@@ -80,7 +80,7 @@ async def _fetch_listings_for_district(
             "in": region_id,
             "_data": "routes/kr.buy-sell.s",
         }
-        timeout = aiohttp.ClientTimeout(total=15)
+        timeout = aiohttp.ClientTimeout(total=3)
         async with session.get(SEARCH_DATA_URL, params=params, timeout=timeout) as resp:
             if resp.status == 429:
                 return region_id, [], True, False
